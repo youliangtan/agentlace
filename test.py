@@ -7,7 +7,7 @@ import time
 
 cap = cv2.VideoCapture(0)
 
-def obs_callback(keys, payload):
+def obs_callback(keys: set) -> dict:
     print("Observation requested from client: ", keys)
     start = time.time()
     # TODO get image from webcam
@@ -23,7 +23,7 @@ def obs_callback(keys, payload):
     # print("Time taken to capture image: ", time.time() - start)
     return obj
 
-def act_callback(key, payload):
+def act_callback(key: str, payload: dict) -> dict:
     print("action requested from client! ", key)
     return {}
 
@@ -42,46 +42,49 @@ if __name__ == "__main__":
         port_number = args.port,
         action_keys = ["init", "move", "gripper", "reset", "start"],
         observation_keys = ["image", "proprio"],
+        broadcast_port=5557
     )
+
+    CLIENT_TIMEOUT = 8
 
     if args.server:
         server = EdgeServer(config, obs_callback=obs_callback, act_callback=act_callback)
-        server.start()
+        server.start(threaded=True)
+
+        # Test broadcast
+        while True:
+            time.sleep(1)
+            server.publish_obs({"depth_image": "test"})
 
     if args.client:
         client = EdgeClient(args.ip, config)
+        
+        sub_count = 0
+        def sub_callback(obs: dict):
+            # fix this
+            global sub_count
+            sub_count += 1
+            print("Obs stream: ", obs, sub_count)
+        
+        client.register_obs_callback(callback=sub_callback)
+
         # 5Hz get image from server and display
-        end_time = time.time() + 10  # For example, run for 10 seconds
+        end_time = time.time() + CLIENT_TIMEOUT  # For example, run for 10 seconds
         while time.time() < end_time:
             start = time.time()
             obs = client.obs()
             img = obs["image"]
-            if img is None:
-                continue
             
-            # # assert img is not None
+            assert img is not None
+
             # # assert img.shape == (256, 256, 3)
             cv2.imshow("image", img)
             if cv2.waitKey(100) & 0xFF == ord('q'):  # Wait for 200 ms; quit on 'q' keypress
                 break
-            
             print("Time taken to get image: ", time.time() - start)
 
         cv2.destroyAllWindows()
-
-        # TODO: 5 hz get image from server and display
-    
-        # obs = client.obs()
-        # img = obs["image"]
-        # assert img is not None
-        # assert img.shape == (256, 256, 3)
-        # cv2.imshow("image", img)
-        # if cv2.waitKey(1) & 0xFF == ord('q'):
-        #     break
-        # time.sleep(0.2)  # 5Hz
-        # # cv2.imshow("image", img)
-        # # cv2.waitKey(0)
-
+        assert sub_count == CLIENT_TIMEOUT, f"Expected {CLIENT_TIMEOUT} messages, got {sub_count}"
         res = client.act("move")
         print(res)
 

@@ -2,7 +2,8 @@
 
 import zmq
 import argparse
-from typing import Optional, Callable, Dict, Protocol
+from typing import Optional, Callable, Dict
+from typing_extensions import Protocol
 import pickle
 import logging
 import zlib
@@ -25,7 +26,7 @@ class ReqRepServer:
         self.impl_callback = impl_callback
 
         logging.basicConfig(level=log_level)
-        logging.debug(f"Reqrep server is listening on port {port}")
+        logging.debug(f"Req-rep server is listening on port {port}")
 
     def run(self):
         while True:
@@ -64,7 +65,7 @@ class ReqRepClient:
         """
         self.context = zmq.Context()
         logging.basicConfig(level=log_level)
-        logging.debug(f"Reqrep client is connecting to {ip}:{port}")
+        logging.debug(f"Req-rep client is connecting to {ip}:{port}")
 
         self.socket = self.context.socket(zmq.REQ)
         self.socket.connect(f"tcp://{ip}:{port}")
