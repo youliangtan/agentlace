@@ -1,10 +1,11 @@
+#!/usr/bin/env python3
+
 import hashlib
 import pickle
 import sys
 
 def compute_hash(obj):
     pickle_str = pickle.dumps(obj)
-
     # Compute MD5 hash of the string
     return hashlib.md5(pickle_str).hexdigest()
 

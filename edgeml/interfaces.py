@@ -2,6 +2,7 @@
 
 from typing import Any, Optional, Callable, Set, Dict, List
 from typing_extensions import Protocol
+from collections import deque
 
 from edgeml.zmq_wrapper.req_rep import ReqRepServer, ReqRepClient
 from edgeml.zmq_wrapper.broadcast import BroadcastServer, BroadcastClient
@@ -156,14 +157,28 @@ class EdgeClient:
 
 class InterferenceServer:
     def __init__(self, port_num: int):
-        raise NotImplementedError
-    
-    def start(threaded: bool = False):
+        """
+        Create a server with the given port number and interface names
+        """
+        def parser_cb(payload: dict) -> dict:
+            interface_name = payload.get('interface')
+            if interface_name and interface_name in self.interfaces:
+                return self.interfaces[interface_name](payload)
+            return {"status": "error", "message": "Invalid interface or payload"}
+
+        self.server = ReqRepServer(port_num, parser_cb)
+        self.interfaces = {}
+
+    def start(self, threaded: bool = False):
         """
         Starts the server, defaulting to blocking mode
         :param threaded: Whether to start the server in a separate thread
         """
-        raise NotImplementedError
+        if threaded:
+            self.thread = threading.Thread(target=self.server.run)
+            self.thread.start()
+        else:
+            self.server.run()
     
     def register_interface(self, name: str, callback: Callable):
         """
@@ -171,17 +186,22 @@ class InterferenceServer:
         :param name: Name of the interface
         :param callback: Callback function for the interface
         """
-        raise NotImplementedError
+        self.interfaces[name] = callback
+
+##############################################################################
 
 class InterferenceClient:
     def __init__(self, server_ip: str, port_num: int):
-        raise NotImplementedError
+        self.client = ReqRepClient(server_ip, port_num)
     
     def interfaces(self) -> Set[str]:
         """
         Returns the set of interfaces available on the server
         :return: Set of interfaces available on the server
         """
+        response = self.client.send_msg({"type": "list_interfaces"})
+        if response:
+            return set(response.get('interfaces', []))
         return set()
 
     def call(self, name: str, payload: dict) -> Optional[dict]:
@@ -191,53 +211,86 @@ class InterferenceClient:
         :param payload: Payload to send to the interface
         :return: Response from the interface
         """
-        return {}
+        return self.client.send_msg(
+            {"type": "call_interface", "interface": name, "payload": payload})
 
 ##############################################################################
 
-class Strategy:
-    ReqRep = 0
-    PubSub = 1
-
 class TrainerConfig:
     port_number: int
-    payload_keys: Set[str]
-    Strategy: Strategy
+    broadcast_port: int
+    queue_size: int = 1
+
+class TrainerCallbackProtocol(Protocol):
+    """
+    :param payload: Payload to send to the trainer, e.g. training data
+    :return: Response to send to the client, can return updated weights.
+    """
+    def __call__(self, payload: dict) -> Optional[dict]:
+        ...
 
 class TrainerServer:
-    def __init__(self, config: TrainerConfig):
-        raise NotImplementedError
-
-    def train_step(self, payload: dict) -> Optional[dict]:
+    def __init__(self,
+                 config: TrainerConfig,
+                 train_callback: TrainerCallbackProtocol,
+                 log_level=logging.DEBUG):
         """
-        Performs a training step with the given payload
-        :param payload: Payload to send to the trainer
-        :return: Response from the trainer
+        :param config: Config object
+        :param train_callback: Callback function when client requests training
+        :param act_callback: Callback function when client requests action
         """
-        raise NotImplementedError
+        self.queue = deque() # FIFO queue
 
-    def start(threaded: bool = False):
+        def __callback_impl(payload: dict) -> dict:
+            if len(self.queue) >= config.queue_size:
+                self.queue.popleft()
+            self.queue.append(payload)
+            return train_callback(payload)
+
+        self.req_rep_server = ReqRepServer(config.port_number, __callback_impl)
+
+    def get_data(self) -> List[dict]:
+        """
+        Returns the list of training data, max size is `config.queue_size`
+        """
+        return list(self.queue)
+
+    def publish_weights(self, payload: dict):
+        """
+        Publishes the weights to the broadcast server,
+        This only works if the broadcast server is initialized 
+        via `Config.broadcast_port`
+        """
+        self.broadcast_server.broadcast(payload)
+
+    def start(self, threaded: bool = False):
         """
         Starts the server, defaulting to blocking mode
         :param threaded: Whether to start the server in a separate thread
         """
-        raise NotImplementedError
+        self.req_rep_server.start(threaded=threaded)
+
+##############################################################################
 
 class TrainerClient:
     def __init__(self, server_ip: str, config: TrainerConfig):
-        raise NotImplementedError
+        self.req_rep_client = ReqRepClient(server_ip, config.port_number)
+        self.server_ip = server_ip
+        self.config = config
+        print(f"Initiated trainer client at {server_ip}:{config.port_number}")
 
     def train_step(self, payload: dict) -> Optional[dict]:
         """
         Performs a training step with the given payload.
-        NOTE: This is a blocking call.
+        NOTE: This is a blocking call. If the trainer needs more time to process,
+            use the publish_weights() method in the server instead.
         :param payload: Payload to send to the trainer
         :return: Response from the trainer
         """
-        return None
+        return self.req_rep_client.send_msg(payload)
     
-    def send_data(payload: dict):
-        pass
-    
-    def recv_weights_callback(callback: Callable):
-        pass
+    def recv_weights_callback(self, callback: Callable[[dict], None]):
+        """Registers the callback function for receiving weights"""
+        self.broadcast_client = BroadcastClient(
+            self.server_ip, self.config.broadcast_port)
+        self.broadcast_client.async_start(callback)

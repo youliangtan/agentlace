@@ -5,14 +5,12 @@ from edgeml.interfaces import EdgeClient, EdgeServer, EdgeConfig
 import cv2
 import time
 
+# Capture image from webcam
 cap = cv2.VideoCapture(0)
 
 def obs_callback(keys: set) -> dict:
     print("Observation requested from client: ", keys)
-    start = time.time()
-    # TODO get image from webcam
     # img = cv2.imread("edgeml/tests/test_image.png")    
-    # Capture image from webcam
     ret, img = cap.read()
 
     if not ret:
@@ -25,6 +23,8 @@ def obs_callback(keys: set) -> dict:
 
 def act_callback(key: str, payload: dict) -> dict:
     print("action requested from client! ", key)
+    if key == "move":
+        return {"move": "success"}
     return {}
 
 ##############################################################################
@@ -51,7 +51,7 @@ if __name__ == "__main__":
         server = EdgeServer(config, obs_callback=obs_callback, act_callback=act_callback)
         server.start(threaded=True)
 
-        # Test broadcast
+        # broadcast observations stream every 1 second
         while True:
             time.sleep(1)
             server.publish_obs({"depth_image": "test"})
@@ -61,23 +61,22 @@ if __name__ == "__main__":
         
         sub_count = 0
         def sub_callback(obs: dict):
-            # fix this
             global sub_count
             sub_count += 1
             print("Obs stream: ", obs, sub_count)
-        
+
         client.register_obs_callback(callback=sub_callback)
 
         # 5Hz get image from server and display
-        end_time = time.time() + CLIENT_TIMEOUT  # For example, run for 10 seconds
+        end_time = time.time() + CLIENT_TIMEOUT
         while time.time() < end_time:
             start = time.time()
             obs = client.obs()
             img = obs["image"]
             
             assert img is not None
+            # assert img.shape == (256, 256, 3)
 
-            # # assert img.shape == (256, 256, 3)
             cv2.imshow("image", img)
             if cv2.waitKey(100) & 0xFF == ord('q'):  # Wait for 200 ms; quit on 'q' keypress
                 break
@@ -86,6 +85,6 @@ if __name__ == "__main__":
         cv2.destroyAllWindows()
         assert sub_count == CLIENT_TIMEOUT, f"Expected {CLIENT_TIMEOUT} messages, got {sub_count}"
         res = client.act("move")
-        print(res)
+        assert res["move"] == "success"
 
-    print("Done")
+    print("Done All")
