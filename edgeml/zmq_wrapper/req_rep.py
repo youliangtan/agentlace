@@ -25,14 +25,19 @@ class ReqRepServer:
         self.socket.setsockopt(zmq.SNDHWM, 5)
         self.impl_callback = impl_callback
 
+        # Set a timeout for the recv method (e.g., 1.5 second)
+        self.socket.setsockopt(zmq.RCVTIMEO, 1500)
+        self.is_kill = False
+        self.thread = None
+
         logging.basicConfig(level=log_level)
         logging.debug(f"Req-rep server is listening on port {port}")
 
     def run(self):
-        while True:
+        while not self.is_kill:
             try:
                 #  Wait for next request from client
-                message = self.socket.recv(flags=zmq.NOBLOCK)
+                message = self.socket.recv()
                 message = zlib.decompress(message)
                 message = pickle.loads(message)
                 logging.debug(f"Received new request: {message}")
@@ -47,7 +52,13 @@ class ReqRepServer:
                     logging.warning("No implementation callback provided.")
                     self.socket.send(b"World")
             except zmq.Again as e:
-                pass
+                continue
+
+    def stop(self):
+        self.is_kill = True # kill the thread in run
+        if self.thread:
+            self.thread.join()  # ensure the thread exits
+        self.socket.close()
 
 ##############################################################################
 

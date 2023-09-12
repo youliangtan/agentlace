@@ -2,7 +2,7 @@
 
 from edgeml.interfaces import InferenceClient, InferenceServer
 
-def test():
+def test_inference():
     # Test functions for server interfaces
     def echo(payload: dict) -> dict:
         return {"status": "ok", "message": payload}
@@ -50,7 +50,7 @@ def test():
     response = client.call("unknown", {})
     assert response["status"] == "error", "Server did not handle unknown interface"
 
-    print("All tests passed!")
+    print("[test_inference] All tests passed!")
 
 if __name__ == "__main__":
-    test()
+    test_inference()

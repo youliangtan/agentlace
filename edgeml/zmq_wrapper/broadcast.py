@@ -34,21 +34,36 @@ class BroadcastClient:
         self.socket = self.context.socket(zmq.SUB)
         self.socket.connect(f"tcp://{ip}:{port}")
         self.socket.setsockopt_string(zmq.SUBSCRIBE, "")  # Subscribe to all messages
+
+        # Set a timeout for the recv method (e.g., 1.5 second)
+        self.socket.setsockopt(zmq.RCVTIMEO, 1500)
+        self.is_kill = False
+        self.thread = None
             
     def async_start(self, callback: Callable[[dict], None]):
         def async_listen():
-            while True:
-                serialized = self.socket.recv()
-                serialized = zlib.decompress(serialized)
-                message = pickle.loads(serialized)
-                callback(message)
+            while not self.is_kill:
+                try:
+                    serialized = self.socket.recv()
+                    serialized = zlib.decompress(serialized)
+                    message = pickle.loads(serialized)
+                    callback(message)
+                except zmq.Again:
+                    # Timeout occurred, check is_kill flag again
+                    continue
         threading.Thread(target=async_listen).start()
+    
+    def stop(self):
+        self.is_kill = True # kill the thread
+        if self.thread:
+            self.thread.join()  # ensure the thread exits
+        self.socket.close()
 
 ##############################################################################
 
 if __name__ == "__main__":
     import time
-    
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--server', action='store_true')
     parser.add_argument('--client', action='store_true')

@@ -18,7 +18,6 @@ def obs_callback(keys: set) -> dict:
         return {'image': None}
 
     obj = {"image": img}
-    # print("Time taken to capture image: ", time.time() - start)
     return obj
 
 def act_callback(key: str, payload: dict) -> dict:
@@ -54,7 +53,7 @@ if __name__ == "__main__":
         # broadcast observations stream every 1 second
         while True:
             time.sleep(1)
-            server.publish_obs({"depth_image": "test"})
+            server.publish_obs({"depth_image": "test-broadcast publish impl"})
 
     if args.client:
         client = EdgeClient(args.ip, config)

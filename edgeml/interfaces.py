@@ -17,7 +17,7 @@ import json
 
 
 class EdgeConfig(BaseModel):
-    # Client and server should have the same config
+    # NOTE: Client and server should have the same config
     port_number: int
     action_keys: List[str]
     observation_keys: List[str]
@@ -60,18 +60,18 @@ class EdgeServer:
         :param obs_callback: Callback function when client requests observation
         :param act_callback: Callback function when client requests action
         """
-        def obs_parser_cb(payload: dict) -> dict:
+        def __obs_parser_cb(payload: dict) -> dict:
             if payload["type"] == "obs" and obs_callback is not None:
                 return obs_callback(payload["keys"])
             elif payload["type"] == "act" and act_callback is not None:
                 return act_callback(payload["key"], payload["payload"])
             elif payload["type"] == "hash":
                 config_json = json.dumps(config.dict(), separators=(',', ':'))
-                return {"payload": config_json}
+                return {"status": "success", "payload": config_json}
             return {"status": "error", "message": "Invalid payload"}
 
         self.config = config
-        self.server = ReqRepServer(config.port_number, obs_parser_cb)
+        self.server = ReqRepServer(config.port_number, __obs_parser_cb)
         logging.basicConfig(level=log_level)
         logging.debug(f"Edge server is listening on port {config.port_number}")
 
@@ -101,6 +101,10 @@ class EdgeServer:
             return False
         self.broadcast.broadcast(payload)
         return True
+    
+    def stop(self):
+        """Stop the server"""
+        self.server.stop()
 
 ##############################################################################
 
@@ -125,27 +129,29 @@ class EdgeClient:
         config.action_keys = set(config.action_keys)
         self.config = config
         self.server_ip = server_ip
+        self.broadcast_client = None
         print("Done init client")
 
-    def obs(self, keys: Optional[Set[str]] = None) -> dict:
+    def obs(self, keys: Optional[Set[str]] = None) -> Optional[dict]:
         """
         Returns the observation from the server
         :param keys: Set of keys to request from the server, defaults to all keys
-        :return: Observation from the server
+        :return: Observation from the server, `None` when not connected
         """
-        if keys is not None:
+        if keys is None:
+            keys = self.config.observation_keys # if None and select all
+        else:
             for key in keys:
-                assert key in self.config.observation_keys,\
-                    f"Invalid observation key: {key}"
+                assert key in self.config.observation_keys, f"Invalid obs key: {key}"
         messsage = {"type": "obs", "keys": keys}
         return self.client.send_msg(messsage)
 
-    def act(self, key: str, payload: dict = {}) -> dict:
+    def act(self, key: str, payload: dict = {}) -> Optional[dict]:
         """
         Sends the action to the server
         :param key: Key of the action
         :param payload: Payload to send to the server
-        :return: Response from the server
+        :return: Response from the server, `None` when not connected
         """
         if key not in self.config.action_keys:
             raise Exception(f"Invalid action key: {key}")
@@ -163,6 +169,11 @@ class EdgeClient:
             self.server_ip, self.config.broadcast_port)
         self.broadcast_client.async_start(callback)
 
+    def stop(self):
+        """Stop the client"""
+        if self.broadcast_client is not None:
+            self.broadcast_client.stop()
+
 ##############################################################################
 
 
@@ -171,7 +182,7 @@ class InferenceServer:
         """
         Create a server with the given port number and interface names
         """
-        def parser_cb(payload: dict) -> dict:
+        def __parser_cb(payload: dict) -> dict:
             # if is list_interfaces type
             if payload.get('type') == 'list_interfaces':
                 return {"interfaces": list(self.interfaces.keys())}
@@ -181,7 +192,7 @@ class InferenceServer:
                     return self.interfaces[interface_name](payload['payload'])
             return {"status": "error", "message": "Invalid interface or payload"}
 
-        self.server = ReqRepServer(port_num, parser_cb)
+        self.server = ReqRepServer(port_num, __parser_cb)
         self.interfaces = {}
 
     def start(self, threaded: bool = False):
@@ -202,6 +213,10 @@ class InferenceServer:
         :param callback: Callback function for the interface
         """
         self.interfaces[name] = callback
+    
+    def stop(self):
+        """Stop the server"""
+        self.server.stop()
 
 ##############################################################################
 
@@ -234,7 +249,7 @@ class InferenceClient:
 ##############################################################################
 
 
-class TrainerConfig:
+class TrainerConfig(BaseModel):
     port_number: int
     broadcast_port: int
     queue_size: int = 1
@@ -269,6 +284,7 @@ class TrainerServer:
             return train_callback(payload)
 
         self.req_rep_server = ReqRepServer(config.port_number, __callback_impl)
+        self.broadcast_server = BroadcastServer(config.broadcast_port)
 
     def get_data(self) -> List[dict]:
         """
@@ -289,7 +305,14 @@ class TrainerServer:
         Starts the server, defaulting to blocking mode
         :param threaded: Whether to start the server in a separate thread
         """
-        self.req_rep_server.start(threaded=threaded)
+        if threaded:
+            self.thread = threading.Thread(target=self.req_rep_server.run)
+            self.thread.start()
+        else:
+            self.req_rep_server.run()
+            
+    def stop(self):
+        self.req_rep_server.stop()
 
 ##############################################################################
 
@@ -307,7 +330,7 @@ class TrainerClient:
         NOTE: This is a blocking call. If the trainer needs more time to process,
             use the publish_weights() method in the server instead.
         :param payload: Payload to send to the trainer
-        :return: Response from the trainer
+        :return: Response from the trainer, return None if timeout
         """
         return self.req_rep_client.send_msg(payload)
 
@@ -316,3 +339,7 @@ class TrainerClient:
         self.broadcast_client = BroadcastClient(
             self.server_ip, self.config.broadcast_port)
         self.broadcast_client.async_start(callback)
+
+    def stop(self):
+        """Stop the client"""
+        self.broadcast_client.stop()

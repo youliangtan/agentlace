@@ -10,6 +10,18 @@ It is common for edge device to be limited by GPU compute. This library enables 
 pip install -e .
 ```
 
+## Run example
+
+```bash
+python3 example.py --server
+```
+
+On a different terminal, you can also run it on a different machine and provide custom ip address and port number. e.g. `--ip 100.10.23.23`
+
+```bash
+python3 example.py --client
+```
+
 ## Main classes:
 
 1. Edge device as server: `edgeml.EdgeServer` and `edgeml.EdgeClient`
