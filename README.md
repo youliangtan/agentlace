@@ -7,7 +7,7 @@ It is common for edge device to be limited by GPU compute. This library enables 
 ## Installation
 
 ```bash
-pip install edgeml
+pip install -e .
 ```
 
 ## Main classes:

@@ -9,14 +9,11 @@ setup(
     author_email='tan_you_liang@hotmail.com',
     license='MIT',
     install_requires=[
-                        'zmq',
-                        'typing',
-                        'zlib',
-                        'typing_extensions',
-                        'pydantic',
-                        'opencv-python',
-                        'hashlib',
-                        'pickle',
-                     ]
+        'zmq',
+        'typing',
+        'typing_extensions',
+        'pydantic',
+        'opencv-python',
+    ],
     zip_safe=False
 )

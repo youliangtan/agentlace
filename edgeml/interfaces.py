@@ -11,8 +11,10 @@ from edgeml.internal.utils import compute_hash
 import threading
 import logging
 from pydantic import BaseModel
+import json
 
 ##############################################################################
+
 
 class EdgeConfig(BaseModel):
     # Client and server should have the same config
@@ -21,14 +23,17 @@ class EdgeConfig(BaseModel):
     observation_keys: List[str]
     broadcast_port: Optional[int] = None
 
+
 class ObsCallbackProtocol(Protocol):
     """
     Define the data type of the callback function
     :param keys: Set of keys of the observation, defaults to all keys
     :return: Response to send to the client
     """
+
     def __call__(self, keys: Set) -> Dict:
         ...
+
 
 class ActCallbackProtocol(Protocol):
     """
@@ -37,10 +42,12 @@ class ActCallbackProtocol(Protocol):
     :param payload: Payload related to the action in dict format
     :return: Response to send to the client
     """
+
     def __call__(self, key: str, payload: Dict) -> Dict:
         ...
 
 ##############################################################################
+
 
 class EdgeServer:
     def __init__(self,
@@ -59,12 +66,13 @@ class EdgeServer:
             elif payload["type"] == "act" and act_callback is not None:
                 return act_callback(payload["key"], payload["payload"])
             elif payload["type"] == "hash":
-                return {"payload": compute_hash(config.json())}
+                config_json = json.dumps(config.dict(), separators=(',', ':'))
+                return {"payload": config_json}
             return {"status": "error", "message": "Invalid payload"}
 
         self.config = config
         self.server = ReqRepServer(config.port_number, obs_parser_cb)
-        logging.basicConfig(level=log_level)    
+        logging.basicConfig(level=log_level)
         logging.debug(f"Edge server is listening on port {config.port_number}")
 
         if config.broadcast_port is not None:
@@ -89,12 +97,13 @@ class EdgeServer:
         via `Config.broadcast_port`
         """
         if self.config.broadcast_port is None:
-            logging.warning("Broadcast server not initialized")    
+            logging.warning("Broadcast server not initialized")
             return False
         self.broadcast.broadcast(payload)
         return True
 
 ##############################################################################
+
 
 class EdgeClient:
     def __init__(self, server_ip: str, config: EdgeConfig):
@@ -103,8 +112,9 @@ class EdgeClient:
         res = self.client.send_msg({"type": "hash"})
         if res is None:
             raise Exception("Failed to connect to server")
-        local_hash = compute_hash(config.json())
-        if local_hash != res["payload"]:
+
+        config_json = json.dumps(config.dict(), separators=(',', ':'))
+        if compute_hash(config_json) != compute_hash(res["payload"]):
             raise Exception(
                 f"Incompatible config with hash with server. "
                 "Please check the config of the server and client")
@@ -117,7 +127,7 @@ class EdgeClient:
         self.server_ip = server_ip
         print("Done init client")
 
-    def obs(self, keys: Optional[Set[str]]=None) -> dict:
+    def obs(self, keys: Optional[Set[str]] = None) -> dict:
         """
         Returns the observation from the server
         :param keys: Set of keys to request from the server, defaults to all keys
@@ -130,7 +140,7 @@ class EdgeClient:
         messsage = {"type": "obs", "keys": keys}
         return self.client.send_msg(messsage)
 
-    def act(self, key:str, payload: dict={}) -> dict:
+    def act(self, key: str, payload: dict = {}) -> dict:
         """
         Sends the action to the server
         :param key: Key of the action
@@ -155,15 +165,20 @@ class EdgeClient:
 
 ##############################################################################
 
-class InterferenceServer:
+
+class InferenceServer:
     def __init__(self, port_num: int):
         """
         Create a server with the given port number and interface names
         """
         def parser_cb(payload: dict) -> dict:
-            interface_name = payload.get('interface')
-            if interface_name and interface_name in self.interfaces:
-                return self.interfaces[interface_name](payload)
+            # if is list_interfaces type
+            if payload.get('type') == 'list_interfaces':
+                return {"interfaces": list(self.interfaces.keys())}
+            elif payload.get('type') == 'call_interface':
+                interface_name = payload.get('interface')
+                if interface_name and interface_name in self.interfaces:
+                    return self.interfaces[interface_name](payload['payload'])
             return {"status": "error", "message": "Invalid interface or payload"}
 
         self.server = ReqRepServer(port_num, parser_cb)
@@ -179,7 +194,7 @@ class InterferenceServer:
             self.thread.start()
         else:
             self.server.run()
-    
+
     def register_interface(self, name: str, callback: Callable):
         """
         Registers the callback function for the interface
@@ -190,16 +205,18 @@ class InterferenceServer:
 
 ##############################################################################
 
-class InterferenceClient:
+
+class InferenceClient:
     def __init__(self, server_ip: str, port_num: int):
         self.client = ReqRepClient(server_ip, port_num)
-    
+
     def interfaces(self) -> Set[str]:
         """
         Returns the set of interfaces available on the server
         :return: Set of interfaces available on the server
         """
         response = self.client.send_msg({"type": "list_interfaces"})
+        print("get interfaces: ", response)
         if response:
             return set(response.get('interfaces', []))
         return set()
@@ -216,18 +233,22 @@ class InterferenceClient:
 
 ##############################################################################
 
+
 class TrainerConfig:
     port_number: int
     broadcast_port: int
     queue_size: int = 1
+
 
 class TrainerCallbackProtocol(Protocol):
     """
     :param payload: Payload to send to the trainer, e.g. training data
     :return: Response to send to the client, can return updated weights.
     """
+
     def __call__(self, payload: dict) -> Optional[dict]:
         ...
+
 
 class TrainerServer:
     def __init__(self,
@@ -239,7 +260,7 @@ class TrainerServer:
         :param train_callback: Callback function when client requests training
         :param act_callback: Callback function when client requests action
         """
-        self.queue = deque() # FIFO queue
+        self.queue = deque()  # FIFO queue
 
         def __callback_impl(payload: dict) -> dict:
             if len(self.queue) >= config.queue_size:
@@ -272,6 +293,7 @@ class TrainerServer:
 
 ##############################################################################
 
+
 class TrainerClient:
     def __init__(self, server_ip: str, config: TrainerConfig):
         self.req_rep_client = ReqRepClient(server_ip, config.port_number)
@@ -288,7 +310,7 @@ class TrainerClient:
         :return: Response from the trainer
         """
         return self.req_rep_client.send_msg(payload)
-    
+
     def recv_weights_callback(self, callback: Callable[[dict], None]):
         """Registers the callback function for receiving weights"""
         self.broadcast_client = BroadcastClient(
