@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
-from typing import Optional, Callable, Set, Dict, Protocol, List
+from typing import Optional, Callable, Set, Dict, List
+from typing_extensions import Protocol
+
 from edgeml.internal.client import Client
 from edgeml.internal.server import Server
 from edgeml.zmq_wrapper.req_rep import ReqRepServer, ReqRepClient
@@ -42,7 +44,6 @@ class EdgeServer:
             elif payload["type"] == "act" and act_callback is not None:
                 return act_callback(key=payload["key"], payload=payload["payload"])
             elif payload["type"] == "hash":
-                print(config.json())
                 return {"payload": compute_hash(config.json())}
             return {"status": "error", "message": "Invalid payload"}
 
