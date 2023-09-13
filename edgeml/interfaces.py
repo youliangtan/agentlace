@@ -17,11 +17,16 @@ import json
 
 
 class EdgeConfig(BaseModel):
-    # NOTE: Client and server should have the same config
+    """Configuration for the edge server and client
+    NOTE: Client and server should have the same config
+            client will raise Error if configs are different, thus can use
+            `version` to check for compatibility
+    """
     port_number: int
     action_keys: List[str]
     observation_keys: List[str]
     broadcast_port: Optional[int] = None
+    version: str = "0.0.1"
 
 
 class ObsCallbackProtocol(Protocol):
@@ -248,9 +253,17 @@ class InferenceClient:
 
 
 class TrainerConfig(BaseModel):
+    """
+    Configuration for the edge server and client
+    NOTE: Client and server should have the same config
+          client will raise Error if configs are different, thus can use
+          `version` to check for compatibility
+    """
     port_number: int
     broadcast_port: int
     queue_size: int = 1
+    request_types: List[str] = []
+    version: str = "0.0.1"
 
 
 class TrainerCallbackProtocol(Protocol):
@@ -259,8 +272,20 @@ class TrainerCallbackProtocol(Protocol):
     :return: Response to send to the client, can return updated weights.
     """
 
-    def __call__(self, payload: dict) -> Optional[dict]:
+    def __call__(self, payload: dict) -> dict:
         ...
+
+
+class RequestCallbackProtocol(Protocol):
+    """
+    :param type: Name of the custom request
+    :param payload: Payload to send to the trainer, e.g. training data
+    :return: Response to send to the client, can return updated weights.
+    """
+
+    def __call__(self, type: str, payload: dict) -> dict:
+        ...
+
 
 ##############################################################################
 
@@ -269,19 +294,30 @@ class TrainerServer:
     def __init__(self,
                  config: TrainerConfig,
                  train_callback: TrainerCallbackProtocol,
+                 request_callback: Optional[RequestCallbackProtocol] = None,
                  log_level=logging.DEBUG):
         """
         :param config: Config object
         :param train_callback: Callback function when client requests training
-        :param act_callback: Callback function when client requests action
+        :param request_callback: Callback function to impl custom requests
         """
         self.queue = deque()  # FIFO queue
+        self.request_types = set(config.request_types)  # faster lookup
 
-        def __callback_impl(payload: dict) -> dict:
-            if len(self.queue) >= config.queue_size:
-                self.queue.popleft()
-            self.queue.append(payload)
-            return train_callback(payload)
+        def __callback_impl(data: dict) -> dict:
+            _type, _payload = data.get("type"), data.get("payload")
+            if _type == "data":
+                if len(self.queue) >= config.queue_size:
+                    self.queue.popleft()
+                self.queue.append(_payload)
+                return train_callback(_payload)
+            elif _type == "hash":
+                print("hash", config.json())
+                config_json = json.dumps(config.dict(), separators=(',', ':'))
+                return {"status": "success", "payload": config_json}
+            elif _type in self.request_types:
+                return request_callback(_type, _payload) if request_callback else {}
+            return {"status": "error", "message": "Invalid type or payload"}
 
         self.req_rep_server = ReqRepServer(config.port_number, __callback_impl)
         self.broadcast_server = BroadcastServer(config.broadcast_port)
@@ -314,6 +350,7 @@ class TrainerServer:
             self.req_rep_server.run()
 
     def stop(self):
+        """Stop the server"""
         self.req_rep_server.stop()
 
 ##############################################################################
@@ -332,19 +369,40 @@ class TrainerClient:
         self.req_rep_client = ReqRepClient(server_ip, config.port_number)
         self.server_ip = server_ip
         self.config = config
+        self.request_types = set(config.request_types)  # faster lookup
+
+        res = self.req_rep_client.send_msg({"type": "hash"})
+        if res is None:
+            raise Exception("Failed to connect to server")
+        config_json = json.dumps(config.dict(), separators=(',', ':'))
+        if compute_hash(config_json) != compute_hash(res["payload"]):
+            raise Exception(
+                f"Incompatible config with hash with server. "
+                "Please check the config of the server and client")
+
         logging.basicConfig(level=log_level)
         logging.debug(
             f"Initiated trainer client at {server_ip}:{config.port_number}")
 
-    def train_step(self, payload: dict) -> Optional[dict]:
+    def train_step(self, data: dict) -> Optional[dict]:
         """
         Performs a training step with the given payload.
         NOTE: This is a blocking call. If the trainer needs more time to process,
             use the publish_weights() method in the server instead.
-        :param payload: Payload to send to the trainer
+        :param data: Payload to send to the trainer
         :return: Response from the trainer, return None if timeout
         """
-        return self.req_rep_client.send_msg(payload)
+        msg = {"type": "data", "payload": data}
+        return self.req_rep_client.send_msg(msg)
+
+    def send_request(self, type: str, payload: dict) -> Optional[dict]:
+        """
+        Send custom requests to the trainer server
+        """
+        if type not in self.request_types:
+            return None
+        msg = {"type": type, "payload": payload}
+        return self.req_rep_client.send_msg(msg)
 
     def recv_weights_callback(self, callback: Callable[[dict], None]):
         """Registers the callback function for receiving weights"""

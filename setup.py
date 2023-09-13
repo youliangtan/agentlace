@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='edgeml',
-    version='0.1',
+    version='0.1.1',
     description='library to enable distributed edge ml training and inference',
     url='https://github.com/youliangtan/edgeml',
     author='auth',

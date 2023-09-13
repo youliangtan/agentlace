@@ -24,6 +24,8 @@ python3 example.py --client
 
 ## Architecture
 
+There are three types of server-client main types of classes for user to use, according to their application. Functional programming is mainly used as the API design. User can define their own callback function to process the data.
+
 1. **Edge device as server: `edgeml.EdgeServer` and `edgeml.EdgeClient`**
    - `EdgeServer` provides observation to client
    - `EdgeClient` can provide further action to server (Optional)
@@ -32,9 +34,9 @@ python3 example.py --client
 
 ```mermaid
 graph LR
-A[Clients] -- obs --> B((Edge Server))
-A -- act --> B
-B -- publish_obs --> A
+A[Clients] -- obs() --> B((Edge Server))
+A -- act() --> B
+B -- publish_obs() --> A
 ```
 
 2. **Inference compute as server: `edgeml.InferenceServer` and `edgeml.InferenceClient`**
@@ -44,8 +46,8 @@ B -- publish_obs --> A
 
 ```mermaid
 graph LR
-A[Client A] -- call --> C((Inference Server))
-B[Client B] -- call --> C
+A[Client 1] -- call() --> B((Inference Server))
+C[Client 2] -- call() --> B
 ```
 
 3. **Trainer compute as server: `edgeml.TrainerServer` and `edgeml.TrainerClient`**
@@ -55,8 +57,9 @@ B[Client B] -- call --> C
 
 ```mermaid
 graph LR
-A[Clients] -- train_step --> B((Trainer Server))
-B -- publish_weights --> A
+A[Clients] -- train_step() --> B((Trainer Server))
+B -- publish_weights() --> A
+A -- send_request() --> B
 ```
 
 ---
@@ -86,9 +89,9 @@ def action_callback(key, action):
 
 def observation_callback(keys):
     # TODO: return the desired observations here
-    return {"observation": "some_value"}
+    return {"cam1": "some_value"}
 
-config = edgeml.EdgeConfig(port_number=6379, action_keys=['action'], observation_keys=['observation'])
+config = edgeml.EdgeConfig(port_number=6379, action_keys=['move'], observation_keys=['cam1'])
 agent_server = edgeml.EdgeServer(config, observation_callback, action_callback)
 agent_server.start()
 ```
@@ -147,3 +150,18 @@ config = edgeml.TrainerConfig(port_number=6379, broadcast_port=6380)
 trainer_server = edgeml.TrainerServer(config, train_step)
 trainer_server.start()
 ```
+
+## Notes
+
+- Run test cases to make sure everything is working as expected.
+
+```bash
+python3 edgeml/tests/test_edge.py
+python3 edgeml/tests/test_inference.py
+python3 edgeml/tests/test_trainer.py
+
+# Run all tests
+python3 edgeml/tests/test_all.py
+```
+
+- The current implementation mainly uses zeromq as communication protocol, it should be easy to extend it to support other protocols such as grpc. (TODO: impl abstract function when there is a need)
