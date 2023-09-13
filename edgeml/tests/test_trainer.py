@@ -2,7 +2,6 @@
 
 import time
 import logging
-from typing import Optional
 from edgeml.interfaces import TrainerClient, TrainerServer, TrainerConfig
 
 def dummy_training_callback(payload: dict) -> dict:
@@ -46,11 +45,11 @@ def test_trainer():
     print("Client received response:", response)
 
     # 4. Custom get stats request
-    response = client.send_request("get-stats", {})
+    response = client.request("get-stats", {})
     print("Client received response:", response)
     assert response['trainer-status'] == "it's working", "Invalid response"
     
-    response = client.send_request("invalid", {})
+    response = client.request("invalid", {})
     assert response is None, "Invalid request should return None"
 
     # 5. Server publishes weights (for this test, just echo the training data)

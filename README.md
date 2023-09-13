@@ -66,6 +66,8 @@ A -- "send_request()" --> B
 
 ## Example Usage
 
+> For detailed example, please refer to the test scripts in `edgeml/tests/`.
+
 1. **Edge Device as Server**
 
 An edge device (Agent) can send observations to a remote client. The client, in turn, can provide actions to the agent based on these observations. This uses the `edgeml.EdgeServer` and `edgeml.EdgeClient` classes.

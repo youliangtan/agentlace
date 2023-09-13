@@ -29,7 +29,7 @@ class EdgeConfig(BaseModel):
     version: str = "0.0.1"
 
 
-class ObsCallbackProtocol(Protocol):
+class ObsCallback(Protocol):
     """
     Define the data type of the callback function
         :param keys: Set of keys of the observation, defaults to all keys
@@ -40,7 +40,7 @@ class ObsCallbackProtocol(Protocol):
         ...
 
 
-class ActCallbackProtocol(Protocol):
+class ActCallback(Protocol):
     """
     Define the data type of the callback function
         :param key: Key of the action
@@ -57,8 +57,8 @@ class ActCallbackProtocol(Protocol):
 class EdgeServer:
     def __init__(self,
                  config: EdgeConfig,
-                 obs_callback: Optional[ObsCallbackProtocol],
-                 act_callback: Optional[ActCallbackProtocol],
+                 obs_callback: Optional[ObsCallback],
+                 act_callback: Optional[ActCallback],
                  log_level=logging.DEBUG):
         """
         Args:
@@ -266,7 +266,7 @@ class TrainerConfig(BaseModel):
     version: str = "0.0.1"
 
 
-class TrainerCallbackProtocol(Protocol):
+class TrainerCallback(Protocol):
     """
     Define the data type of the trainer callback function
         :param payload: Payload to send to the trainer, e.g. training data
@@ -277,7 +277,7 @@ class TrainerCallbackProtocol(Protocol):
         ...
 
 
-class RequestCallbackProtocol(Protocol):
+class RequestCallback(Protocol):
     """
     Define the data type of the request callback function
         :param type: Name of the custom request
@@ -295,8 +295,8 @@ class RequestCallbackProtocol(Protocol):
 class TrainerServer:
     def __init__(self,
                  config: TrainerConfig,
-                 train_callback: TrainerCallbackProtocol,
-                 request_callback: Optional[RequestCallbackProtocol] = None,
+                 train_callback: TrainerCallback,
+                 request_callback: Optional[RequestCallback] = None,
                  log_level=logging.DEBUG):
         """
         Args
