@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from typing import Any, Optional, Callable, Set, Dict, List
+from typing import Optional, Callable, Set, Dict, List
 from typing_extensions import Protocol
 from collections import deque
 
@@ -88,7 +88,7 @@ class EdgeServer:
     def start(self, threaded: bool = False):
         """
         Starts the server, defaulting to blocking mode
-        :param threaded: Whether to start the server in a separate thread
+            :param threaded: Whether to start the server in a separate thread
         """
         if threaded:
             self.thread = threading.Thread(target=self.server.run)
@@ -99,8 +99,7 @@ class EdgeServer:
     def publish_obs(self, payload: dict) -> bool:
         """
         Publishes the observation to the broadcast server,
-        This only works if the broadcast server is initialized 
-        via `Config.broadcast_port`
+        Enable broadcasting by defining `broadcast_port` in `EdgeConfig`
         """
         if self.config.broadcast_port is None:
             logging.warning("Broadcast server not initialized")

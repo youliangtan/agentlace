@@ -34,9 +34,9 @@ There are three types of server-client main types of classes for user to use, ac
 
 ```mermaid
 graph LR
-A[Clients] -- obs() --> B((Edge Server))
-A -- act() --> B
-B -- publish_obs() --> A
+A[Clients] -- "obs()" --> B((Edge Server))
+A -- "act()" --> B
+B -- "publish_obs()" --> A
 ```
 
 2. **Inference compute as server: `edgeml.InferenceServer` and `edgeml.InferenceClient`**
@@ -46,8 +46,8 @@ B -- publish_obs() --> A
 
 ```mermaid
 graph LR
-A[Client 1] -- call() --> B((Inference Server))
-C[Client 2] -- call() --> B
+A[Client 1] -- "call()" --> B((Inference Server))
+C[Client 2] -- "call()" --> B
 ```
 
 3. **Trainer compute as server: `edgeml.TrainerServer` and `edgeml.TrainerClient`**
@@ -57,9 +57,9 @@ C[Client 2] -- call() --> B
 
 ```mermaid
 graph LR
-A[Clients] -- train_step() --> B((Trainer Server))
-B -- publish_weights() --> A
-A -- send_request() --> B
+A[Clients] -- "train_step()" --> B((Trainer Server))
+B -- "publish_weights()" --> A
+A -- "send_request()" --> B
 ```
 
 ---
