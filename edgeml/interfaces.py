@@ -101,7 +101,7 @@ class EdgeServer:
             return False
         self.broadcast.broadcast(payload)
         return True
-    
+
     def stop(self):
         """Stop the server"""
         self.server.stop()
@@ -130,7 +130,6 @@ class EdgeClient:
         self.config = config
         self.server_ip = server_ip
         self.broadcast_client = None
-        print("Done init client")
 
     def obs(self, keys: Optional[Set[str]] = None) -> Optional[dict]:
         """
@@ -139,7 +138,7 @@ class EdgeClient:
         :return: Observation from the server, `None` when not connected
         """
         if keys is None:
-            keys = self.config.observation_keys # if None and select all
+            keys = self.config.observation_keys  # if None and select all
         else:
             for key in keys:
                 assert key in self.config.observation_keys, f"Invalid obs key: {key}"
@@ -213,7 +212,7 @@ class InferenceServer:
         :param callback: Callback function for the interface
         """
         self.interfaces[name] = callback
-    
+
     def stop(self):
         """Stop the server"""
         self.server.stop()
@@ -231,7 +230,6 @@ class InferenceClient:
         :return: Set of interfaces available on the server
         """
         response = self.client.send_msg({"type": "list_interfaces"})
-        print("get interfaces: ", response)
         if response:
             return set(response.get('interfaces', []))
         return set()
@@ -264,6 +262,8 @@ class TrainerCallbackProtocol(Protocol):
     def __call__(self, payload: dict) -> Optional[dict]:
         ...
 
+##############################################################################
+
 
 class TrainerServer:
     def __init__(self,
@@ -285,6 +285,8 @@ class TrainerServer:
 
         self.req_rep_server = ReqRepServer(config.port_number, __callback_impl)
         self.broadcast_server = BroadcastServer(config.broadcast_port)
+        logging.basicConfig(level=log_level)
+        logging.debug(f"Trainer server is listening on port {config.port_number}")
 
     def get_data(self) -> List[dict]:
         """
@@ -310,7 +312,7 @@ class TrainerServer:
             self.thread.start()
         else:
             self.req_rep_server.run()
-            
+
     def stop(self):
         self.req_rep_server.stop()
 
@@ -318,11 +320,21 @@ class TrainerServer:
 
 
 class TrainerClient:
-    def __init__(self, server_ip: str, config: TrainerConfig):
+    def __init__(self,
+                 server_ip: str,
+                 config: TrainerConfig,
+                 log_level=logging.DEBUG):
+        """
+        :param server_ip: IP address of the server
+        :param config: Config object
+        :param log_level: Logging level
+        """
         self.req_rep_client = ReqRepClient(server_ip, config.port_number)
         self.server_ip = server_ip
         self.config = config
-        print(f"Initiated trainer client at {server_ip}:{config.port_number}")
+        logging.basicConfig(level=log_level)
+        logging.debug(
+            f"Initiated trainer client at {server_ip}:{config.port_number}")
 
     def train_step(self, payload: dict) -> Optional[dict]:
         """
@@ -343,3 +355,4 @@ class TrainerClient:
     def stop(self):
         """Stop the client"""
         self.broadcast_client.stop()
+        logging.debug("Stopped trainer client")

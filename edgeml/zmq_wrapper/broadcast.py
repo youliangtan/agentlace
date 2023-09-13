@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from typing import Any, Callable
+from typing import Callable
 import zmq
 import argparse
 import pickle
@@ -51,7 +51,8 @@ class BroadcastClient:
                 except zmq.Again:
                     # Timeout occurred, check is_kill flag again
                     continue
-        threading.Thread(target=async_listen).start()
+        self.thread = threading.Thread(target=async_listen)
+        self.thread.start()
     
     def stop(self):
         self.is_kill = True # kill the thread

@@ -5,8 +5,6 @@ import logging
 from typing import Optional
 from edgeml.interfaces import TrainerClient, TrainerServer, TrainerConfig
 
-# Assuming all the imports are already here, based on the provided code
-
 def dummy_training_callback(payload: dict) -> Optional[dict]:
     """Simulated callback for training data."""
     print("Server received training data:", payload)
