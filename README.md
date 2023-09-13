@@ -1,12 +1,25 @@
 # edgeml
-Library to enable distributed datastream of inference/trainer computes and edge agents for ml applications.
 
-> THIS IS A WORK IN PROGRESS, only skeleton code is provided. The code is not tested and is not ready for use.
+It is common for edge device to be limited by GPU compute. This library enables distributed datastream from edge device to GPU compute for various ml applications. The lib mainly based on client-server architecutre, enable simple TCP communication between multiple clients to server.
+
+> THIS IS A WORK IN PROGRESS, The code is still in testing phase.
 
 ## Installation
 
 ```bash
-pip install edgeml
+pip install -e .
+```
+
+## Run example
+
+```bash
+python3 example.py --server
+```
+
+On a different terminal, you can also run it on a different machine and provide custom ip address and port number. e.g. `--ip 100.10.23.23`
+
+```bash
+python3 example.py --client
 ```
 
 ## Main classes:
@@ -15,62 +28,18 @@ pip install edgeml
    - `EdgeServer` provides observation to client
    - `EdgeClient` can provide further action to server (Optional)
 
-2. Inference compute as server: `edgeml.InferenceServer` and `edgeml.InferenceClient`
-   - `InferenceClient` provides observation to server and gets prediction
-
-3. Trainer compute as server: `edgeml.TrainerServer` and `edgeml.TrainerClient`
+2. Trainer compute as server: `edgeml.TrainerServer` and `edgeml.TrainerClient`
    - `TrainerClient` provides observation to server and gets new weights
+
+3. Inference compute as server: `edgeml.InferenceServer` and `edgeml.InferenceClient`
+   - `InferenceClient` provides observation to server and gets prediction
 
 ## Usage
 
-1. Remote Training example for an RL application. A edge device (Agent) will provide observation to the trainer, and trainer will return the new weights to the agent. The agent will then update its model with the new weights. 
+1. **Edge Device as Server**
+An edge device (Agent) can send observations to a remote client. The client, in turn, can provide actions to the agent based on these observations.
 
-
-Agent (edge client)
-
-```py
-import edgeml
-import torch
-import gym
-
-def main():
-    env = gym.make('CartPole-v0')
-    observation = env.reset()
-
-    trainer = edgeml.TrainerClient('localhost', 6379, task_id='cartpole-v0')
-    agent = make_agent()
-
-    while True:
-        action = agent.get_action(observation)
-        observation, reward, done, info = env.step(action)
-
-        trainer.send_observation(observation)
-        new_weights = trainer.get_weights()
-
-        agent.update_weights(new_weights)
-```
-
-Trainer (Remote compute)
-
-```py
-import edgeml
-import torch
-import gym
-
-def train_step(observation):
-    # TODO: do some training
-    return new_weights
-
-def main():
-    env = gym.make('CartPole-v0')
-    observation = env.reset()
-    trainer_server = edgeml.TrainerServer('localhost', 6379, task_id='cartpole-v0')
-    trainer_server.set_weights(make_weights())
-    trainer_server.register_train_step(train_step)
-    trainer_server.start()
-```
-
-2. Remote "control" of edge device. An edge device (Agent) can provide observation to a remote client. The client can then provide an action to the agent. The observation and action spaces are defined during the initialization of the agent and client. An example for RL is provided
+This uses the `edgeml.EdgeServer` and `edgeml.EdgeClient` classes.
 
 
 Inference compute as client
@@ -86,31 +55,82 @@ for _ in range(100):
     agent.send_action(prediction)
 ```
 
-edge as server
+Edge device as server
 ```py
-import edgeml
+def action_callback(key, action):
+    # TODO: process action here
+    return {"status": "received"}
 
-def action_callback(action):
-    # some action
-    return
+def observation_callback(keys):
+    # TODO: return the desired observations here
+    return {"observation": "some_value"}
 
-def observation_callback(observation):
-    # some action
-    return
-
-agent_server = edgeml.EdgeServer('localhost', 6379, task_id='mnist')
-agent_server.register_handler(observation_callback, action_callback)
+config = edgeml.EdgeConfig(port_number=6379, action_keys=['action'], observation_keys=['observation'])
+agent_server = edgeml.EdgeServer(config, observation_callback, action_callback)
 agent_server.start()
 ```
 
-3. Agent as client and inference as server
+2. **Remote Training Example for an RL Application**
+A remote trainer receives observations from an edge device (Agent) and sends updated weights back. The Agent then updates its model with these new weights.
 
+This uses the `edgeml.TrainerServer` and `edgeml.TrainerClient` classes.
 
-Client on the edge
+Client
+
+```py
+def main():
+    env = gym.make('CartPole-v0')
+    observation = env.reset()
+    config = edgeml.TrainerConfig(port_number=6379, broadcast_port=6380, payload_keys={"observation"})
+    trainer = edgeml.TrainerClient('localhost', config)
+
+    agent = make_agent()  # Arbitrary agent
+
+    while True:
+        action = agent.get_action(observation)
+        observation, reward, done, info = env.step(action)
+
+        # or we can use callback function to receive new weights
+        new_weights = trainer.train_step({"observation": observation})
+
+        agent.update_weights(new_weights)
+```
+
+Trainer (Remote compute)
+
+```py
+def train_step(payload):
+    observation = payload["observation"]
+    # TODO: do some training based on observation
+    new_weights = {}  # Create new weights here
+    return new_weights
+
+def main():
+    config = edgeml.TrainerConfig(port_number=6379, broadcast_port=6380, payload_keys={"observation"})
+    trainer_server = edgeml.TrainerServer(config, train_step)
+    trainer_server.start()
+```
+
+3. **Agent as client and inference as server**
+
+This uses the `edgeml.InferenceServer` and `edgeml.InferenceClient` classes. This is useful for low power edge devices that cannot run inference locally.
+
+Inference server
 ```py
 import edgeml
 
-inference_compute = edgeml.InferenceClient('localhost', 6379, task_id='mnist')
+def predict(payload):
+    # TODO: do some prediction based on payload
+    return {"prediction": "some_value"}
+
+inference_server = edgeml.InferenceServer(port_num=6379)
+inference_server.register_interface("voice_reg", predict)
 ```
 
-## Notes
+client inference
+```py
+import edgeml
+
+client = edgeml.InferenceClient('localhost', 6379)
+res = client.call("voice_reg", {"audio": "serialized_audio"})
+```
