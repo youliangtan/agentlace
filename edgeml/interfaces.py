@@ -32,8 +32,8 @@ class EdgeConfig(BaseModel):
 class ObsCallbackProtocol(Protocol):
     """
     Define the data type of the callback function
-    :param keys: Set of keys of the observation, defaults to all keys
-    :return: Response to send to the client
+        :param keys: Set of keys of the observation, defaults to all keys
+        :return: Response to send to the client
     """
 
     def __call__(self, keys: Set) -> Dict:
@@ -43,9 +43,9 @@ class ObsCallbackProtocol(Protocol):
 class ActCallbackProtocol(Protocol):
     """
     Define the data type of the callback function
-    :param key: Key of the action
-    :param payload: Payload related to the action in dict format
-    :return: Response to send to the client
+        :param key: Key of the action
+        :param payload: Payload related to the action in dict format
+        :return: Response to send to the client
     """
 
     def __call__(self, key: str, payload: Dict) -> Dict:
@@ -61,9 +61,10 @@ class EdgeServer:
                  act_callback: Optional[ActCallbackProtocol],
                  log_level=logging.DEBUG):
         """
-        :param config: Config object
-        :param obs_callback: Callback function when client requests observation
-        :param act_callback: Callback function when client requests action
+        Args:
+            :param config: Config object
+            :param obs_callback: Callback function when client requests observation
+            :param act_callback: Callback function when client requests action
         """
         def __obs_parser_cb(payload: dict) -> dict:
             if payload["type"] == "obs" and obs_callback is not None:
@@ -138,9 +139,9 @@ class EdgeClient:
 
     def obs(self, keys: Optional[Set[str]] = None) -> Optional[dict]:
         """
-        Returns the observation from the server
-        :param keys: Set of keys to request from the server, defaults to all keys
-        :return: Observation from the server, `None` when not connected
+        Get the observation from the Edge Server
+            :param keys: Set of keys to request, `None`: select all
+            :return: Observation from the server, `None` when not connected
         """
         if keys is None:
             keys = self.config.observation_keys  # if None and select all
@@ -153,9 +154,9 @@ class EdgeClient:
     def act(self, key: str, payload: dict = {}) -> Optional[dict]:
         """
         Sends the action to the server
-        :param key: Key of the action
-        :param payload: Payload to send to the server
-        :return: Response from the server, `None` when not connected
+            :param key: Key of the action
+            :param payload: Payload to send to the server
+            :return: Response from the server, `None` when not connected
         """
         if key not in self.config.action_keys:
             raise Exception(f"Invalid action key: {key}")
@@ -165,7 +166,7 @@ class EdgeClient:
     def register_obs_callback(self, callback: Callable):
         """
         Registers the callback function for observation streaming
-        :param callback: Callback function for observation streaming
+            :param callback: Callback function for observation streaming
         """
         if self.config.broadcast_port is None:
             raise Exception("Broadcast server not initialized")
@@ -202,7 +203,7 @@ class InferenceServer:
     def start(self, threaded: bool = False):
         """
         Starts the server, defaulting to blocking mode
-        :param threaded: Whether to start the server in a separate thread
+            :param threaded: Whether to start the server in a separate thread
         """
         if threaded:
             self.thread = threading.Thread(target=self.server.run)
@@ -213,8 +214,8 @@ class InferenceServer:
     def register_interface(self, name: str, callback: Callable):
         """
         Registers the callback function for the interface
-        :param name: Name of the interface
-        :param callback: Callback function for the interface
+            :param name: Name of the interface
+            :param callback: Callback function for the interface
         """
         self.interfaces[name] = callback
 
@@ -232,7 +233,7 @@ class InferenceClient:
     def interfaces(self) -> Set[str]:
         """
         Returns the set of interfaces available on the server
-        :return: Set of interfaces available on the server
+            :return: Set of interfaces available on the server
         """
         response = self.client.send_msg({"type": "list_interfaces"})
         if response:
@@ -242,9 +243,9 @@ class InferenceClient:
     def call(self, name: str, payload: dict) -> Optional[dict]:
         """
         Calls the interface on the server with the given payload
-        :param name: Name of the interface
-        :param payload: Payload to send to the interface
-        :return: Response from the interface
+            :param name: Name of the interface
+            :param payload: Payload to send to the interface
+            :return: Response from the interface
         """
         return self.client.send_msg(
             {"type": "call_interface", "interface": name, "payload": payload})
@@ -268,8 +269,9 @@ class TrainerConfig(BaseModel):
 
 class TrainerCallbackProtocol(Protocol):
     """
-    :param payload: Payload to send to the trainer, e.g. training data
-    :return: Response to send to the client, can return updated weights.
+    Define the data type of the trainer callback function
+        :param payload: Payload to send to the trainer, e.g. training data
+        :return: Response to send to the client, can return updated weights.
     """
 
     def __call__(self, payload: dict) -> dict:
@@ -278,9 +280,10 @@ class TrainerCallbackProtocol(Protocol):
 
 class RequestCallbackProtocol(Protocol):
     """
-    :param type: Name of the custom request
-    :param payload: Payload to send to the trainer, e.g. training data
-    :return: Response to send to the client, can return updated weights.
+    Define the data type of the request callback function
+        :param type: Name of the custom request
+        :param payload: Payload to send to the trainer, e.g. training data
+        :return: Response to send to the client, can return updated weights.
     """
 
     def __call__(self, type: str, payload: dict) -> dict:
@@ -297,9 +300,10 @@ class TrainerServer:
                  request_callback: Optional[RequestCallbackProtocol] = None,
                  log_level=logging.DEBUG):
         """
-        :param config: Config object
-        :param train_callback: Callback function when client requests training
-        :param request_callback: Callback function to impl custom requests
+        Args
+            :param config: Config object
+            :param train_callback: Callback fn when client call `train_step`
+            :param request_callback: Callback fn to impl custom requests
         """
         self.queue = deque()  # FIFO queue
         self.request_types = set(config.request_types)  # faster lookup
@@ -326,22 +330,20 @@ class TrainerServer:
 
     def get_data(self) -> List[dict]:
         """
-        Returns the list of training data, max size is `config.queue_size`
+        Get the list of training data, max size is `config.queue_size`
         """
         return list(self.queue)
 
     def publish_weights(self, payload: dict):
         """
-        Publishes the weights to the broadcast server,
-        This only works if the broadcast server is initialized 
-        via `Config.broadcast_port`
+        Publishes the weights to the broadcast server.
         """
         self.broadcast_server.broadcast(payload)
 
     def start(self, threaded: bool = False):
         """
         Starts the server, defaulting to blocking mode
-        :param threaded: Whether to start the server in a separate thread
+            :param threaded: Whether to start the server in a separate thread
         """
         if threaded:
             self.thread = threading.Thread(target=self.req_rep_server.run)
@@ -362,9 +364,10 @@ class TrainerClient:
                  config: TrainerConfig,
                  log_level=logging.DEBUG):
         """
-        :param server_ip: IP address of the server
-        :param config: Config object
-        :param log_level: Logging level
+        Args:
+            :param server_ip: IP address of the server
+            :param config: Config object
+            :param log_level: Logging level
         """
         self.req_rep_client = ReqRepClient(server_ip, config.port_number)
         self.server_ip = server_ip
@@ -388,16 +391,19 @@ class TrainerClient:
         """
         Performs a training step with the given payload.
         NOTE: This is a blocking call. If the trainer needs more time to process,
-            use the publish_weights() method in the server instead.
-        :param data: Payload to send to the trainer
-        :return: Response from the trainer, return None if timeout
+        use the publish_weights() method in the server instead.
+            :param data: Payload to send to the trainer
+            :return: Response from the trainer, return None if timeout
         """
         msg = {"type": "data", "payload": data}
         return self.req_rep_client.send_msg(msg)
 
-    def send_request(self, type: str, payload: dict) -> Optional[dict]:
+    def request(self, type: str, payload: dict) -> Optional[dict]:
         """
-        Send custom requests to the trainer server
+        Call the trainer server with custom requests
+            :param type: Name of the custom request, defined in `config.request_types`
+            :param payload: Payload to send to the trainer
+            :return: Response from the trainer, return None if timeout
         """
         if type not in self.request_types:
             return None
