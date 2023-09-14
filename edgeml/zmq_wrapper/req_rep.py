@@ -7,6 +7,7 @@ from typing_extensions import Protocol
 import pickle
 import logging
 import zlib
+from edgeml.internal.utils import print_warning
 
 ##############################################################################
 
@@ -78,9 +79,20 @@ class ReqRepClient:
         logging.basicConfig(level=log_level)
         logging.debug(f"Req-rep client is connecting to {ip}:{port}")
 
+        self.socket = None
+        self.ip, self.port, self.timeout_ms = ip, port, timeout_ms
+        self.reset_socket()
+
+    def reset_socket(self):
+        """
+        Reset the socket connection, this is needed when REQ is in a
+        broken state.
+        """
+        if self.socket:
+            self.socket.close()
         self.socket = self.context.socket(zmq.REQ)
-        self.socket.connect(f"tcp://{ip}:{port}")
-        self.socket.setsockopt(zmq.RCVTIMEO, timeout_ms)
+        self.socket.setsockopt(zmq.RCVTIMEO, self.timeout_ms)
+        self.socket.connect(f"tcp://{self.ip}:{self.port}")
 
     def send_msg(self, request: dict) -> Optional[str]:
         # pickle is chosen over protobuf due to faster de/serialization process
@@ -94,6 +106,9 @@ class ReqRepClient:
             return pickle.loads(message)
         except Exception as e:
             # accepts timeout exception
+            logging.error(f"Failed to send message: {e}")
+            print_warning("WARNING: No response from server. reset socket.")
+            self.reset_socket()
             return None
 
 

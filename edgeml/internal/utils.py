@@ -13,3 +13,11 @@ def print_size(obj):
     size = sys.getsizeof(obj)
     mb_size = size / 1024 ** 2
     print(f"The size of the object is {mb_size} MB")
+
+def print_error(text):
+    # Red color
+    print(f"\033[91m{text}\033[00m")
+
+def print_warning(text):
+    # Yellow color
+    print(f"\033[93m{text}\033[00m")
