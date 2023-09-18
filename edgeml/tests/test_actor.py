@@ -5,7 +5,7 @@ import time
 import logging
 from edgeml.interfaces import ActorClient, ActorServer, ActorConfig
 
-def test_edge():
+def test_actor():
     # 1. Read the image using OpenCV
     img = cv2.imread("edgeml/tests/test_image.png")
 
@@ -65,8 +65,8 @@ def test_edge():
     server.stop()
     client.stop()
 
-    print("[test_edge] All tests passed!")
+    print("[test_actor] All tests passed!")
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
-    test_edge()
+    test_actor()

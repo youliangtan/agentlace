@@ -158,7 +158,7 @@ trainer_server.start()
 - Run test cases to make sure everything is working as expected.
 
 ```bash
-python3 edgeml/tests/test_edge.py
+python3 edgeml/tests/test_actor.py
 python3 edgeml/tests/test_inference.py
 python3 edgeml/tests/test_trainer.py
 
