@@ -26,9 +26,9 @@ python3 example.py --client
 
 There are three types of server-client main types of classes for user to use, according to their application. Functional programming is mainly used as the API design. User can define their own callback function to process the data.
 
-1. **Edge device as server: `edgeml.EdgeServer` and `edgeml.EdgeClient`**
-   - `EdgeServer` provides observation to client
-   - `EdgeClient` can provide further action to server (Optional)
+1. **Actor (edge device) as server: `edgeml.ActorServer` and `edgeml.ActorClient`**
+   - `ActorServer` provides observation to client
+   - `ActorClient` can provide further action to server (Optional)
 
 *Multi-clients can connect to a edge server. client can call `obs`, `act` impl, and server can call `publish_obs` method. The method is shown in the diagram below.*
 
@@ -70,12 +70,12 @@ A -- "send_request()" --> B
 
 1. **Edge Device as Server**
 
-An edge device (Agent) can send observations to a remote client. The client, in turn, can provide actions to the agent based on these observations. This uses the `edgeml.EdgeServer` and `edgeml.EdgeClient` classes.
+An edge device (Agent) can send observations to a remote client. The client, in turn, can provide actions to the agent based on these observations. This uses the `edgeml.ActorServer` and `edgeml.ActorClient` classes.
 
 **GPU Compute as client**
 ```py
 model = load_model()
-agent = edgeml.EdgeClient('localhost', 6379, task_id='mnist', config=agent_config)
+agent = edgeml.ActorClient('localhost', 6379, task_id='mnist', config=agent_config)
 
 for _ in range(100):
     observation = agent.get_observation()
@@ -93,8 +93,8 @@ def observation_callback(keys):
     # TODO: return the desired observations here
     return {"cam1": "some_value"}
 
-config = edgeml.EdgeConfig(port_number=6379, action_keys=['move'], observation_keys=['cam1'])
-agent_server = edgeml.EdgeServer(config, observation_callback, action_callback)
+config = edgeml.ActorConfig(port_number=6379, action_keys=['move'], observation_keys=['cam1'])
+agent_server = edgeml.ActorServer(config, observation_callback, action_callback)
 agent_server.start()
 ```
 
