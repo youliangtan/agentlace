@@ -3,9 +3,9 @@
 import cv2
 import time
 import logging
-from edgeml.interfaces import EdgeClient, EdgeServer, EdgeConfig
+from edgeml.interfaces import ActorClient, ActorServer, ActorConfig
 
-def test_edge():
+def test_actor():
     # 1. Read the image using OpenCV
     img = cv2.imread("edgeml/tests/test_image.png")
 
@@ -22,22 +22,22 @@ def test_edge():
         return {"status": "error", "message": "Invalid action"}
 
     # Define our config
-    config = EdgeConfig(
+    config = ActorConfig(
         port_number=5555,
         action_keys=['send_image'],
         observation_keys=['test_image'],
         broadcast_port=5556
     )
 
-    # Initialize and start the EdgeServer in a separate thread
-    server = EdgeServer(config, obs_callback, act_callback)
+    # Initialize and start the ActorServer in a separate thread
+    server = ActorServer(config, obs_callback, act_callback)
     server.start(threaded=True)
 
     # Give the server a moment to start up
     time.sleep(2)
 
-    # Initialize the EdgeClient
-    client = EdgeClient('127.0.0.1', config)
+    # Initialize the ActorClient
+    client = ActorClient('127.0.0.1', config)
 
     # Define the callback for the client to handle broadcasted data
     received_broadcast = False
@@ -65,8 +65,8 @@ def test_edge():
     server.stop()
     client.stop()
 
-    print("[test_edge] All tests passed!")
+    print("[test_actor] All tests passed!")
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
-    test_edge()
+    test_actor()

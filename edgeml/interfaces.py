@@ -8,6 +8,7 @@ from edgeml.zmq_wrapper.req_rep import ReqRepServer, ReqRepClient
 from edgeml.zmq_wrapper.broadcast import BroadcastServer, BroadcastClient
 from edgeml.internal.utils import compute_hash
 
+import time
 import threading
 import logging
 from pydantic import BaseModel
@@ -16,7 +17,7 @@ import json
 ##############################################################################
 
 
-class EdgeConfig(BaseModel):
+class ActorConfig(BaseModel):
     """Configuration for the edge server and client
     NOTE: Client and server should have the same config
             client will raise Error if configs are different, thus can use
@@ -54,9 +55,9 @@ class ActCallback(Protocol):
 ##############################################################################
 
 
-class EdgeServer:
+class ActorServer:
     def __init__(self,
-                 config: EdgeConfig,
+                 config: ActorConfig,
                  obs_callback: Optional[ObsCallback],
                  act_callback: Optional[ActCallback],
                  log_level=logging.DEBUG):
@@ -99,7 +100,7 @@ class EdgeServer:
     def publish_obs(self, payload: dict) -> bool:
         """
         Publishes the observation to the broadcast server,
-        Enable broadcasting by defining `broadcast_port` in `EdgeConfig`
+        Enable broadcasting by defining `broadcast_port` in `ActorConfig`
         """
         if self.config.broadcast_port is None:
             logging.warning("Broadcast server not initialized")
@@ -114,8 +115,8 @@ class EdgeServer:
 ##############################################################################
 
 
-class EdgeClient:
-    def __init__(self, server_ip: str, config: EdgeConfig):
+class ActorClient:
+    def __init__(self, server_ip: str, config: ActorConfig):
         self.client = ReqRepClient(server_ip, config.port_number)
         # Check hash of server config to ensure compatibility
         res = self.client.send_msg({"type": "hash"})
@@ -129,7 +130,7 @@ class EdgeClient:
                 "Please check the config of the server and client")
 
         # use hash for faster lookup. config uses list because it is
-        # used for hash md4 comparison
+        # used for hash md5 comparison
         config.observation_keys = set(config.observation_keys)
         config.action_keys = set(config.action_keys)
         self.config = config
@@ -263,6 +264,7 @@ class TrainerConfig(BaseModel):
     broadcast_port: int
     queue_size: int = 1
     request_types: List[str] = []
+    rate_limit: Optional[int] = None
     version: str = "0.0.1"
 
 
@@ -381,7 +383,7 @@ class TrainerClient:
             raise Exception(
                 f"Incompatible config with hash with server. "
                 "Please check the config of the server and client")
-
+        self.last_request_time = 0
         logging.basicConfig(level=log_level)
         logging.debug(
             f"Initiated trainer client at {server_ip}:{config.port_number}")
@@ -395,6 +397,11 @@ class TrainerClient:
             :return: Response from the trainer, return None if timeout
         """
         msg = {"type": "data", "payload": data}
+        if self.config.rate_limit and \
+                time.time() - self.last_request_time < 1 / self.config.rate_limit:
+            logging.warning("Rate limit exceeded")
+            return None
+        self.last_request_time = time.time()
         return self.req_rep_client.send_msg(msg)
 
     def request(self, type: str, payload: dict) -> Optional[dict]:
@@ -407,6 +414,11 @@ class TrainerClient:
         if type not in self.request_types:
             return None
         msg = {"type": type, "payload": payload}
+        if self.config.rate_limit and \
+                time.time() - self.last_request_time < 1 / self.config.rate_limit:
+            logging.warning("Rate limit exceeded")
+            return None
+        self.last_request_time = time.time()
         return self.req_rep_client.send_msg(msg)
 
     def recv_weights_callback(self, callback: Callable[[dict], None]):
