@@ -1,6 +1,6 @@
 # edgeml
 
-It is common for edge device to be limited by GPU compute. This library enables distributed datastream from edge device to GPU compute for various ml applications. The lib mainly based on client-server architecutre, enable simple TCP communication between multiple clients to server.
+A simple framework for distributed machine learning library for edge computing. It is common for edge device to be limited by GPU compute. This library enables distributed datastream from edge device to GPU compute for various ml applications. The lib mainly based on client-server architecutre, enable simple TCP communication between multiple clients to server.
 
 ## Installation
 
@@ -24,22 +24,24 @@ python3 example.py --client
 
 ## Architecture
 
-There are three types of server-client main types of classes for user to use, according to their application. Functional programming is mainly used as the API design. User can define their own callback function to process the data.
+There are three types of server-client main types of classes for user to use, according to their application. Functional programming is mainly used as the API design. User can define their own callback function to process the data. There are mainly 3 modes: `action`, `inference`, `trainer`.
 
-1. **Actor (edge device) as server: `edgeml.ActorServer` and `edgeml.ActorClient`**
-   - `ActorServer` provides observation to client
-   - `ActorClient` can provide further action to server (Optional)
+1. **Action service (edge device) as server: `edgeml.ActionServer` and `edgeml.ActionClient`**
+   - `ActionServer` provides observation to client
+   - `ActionClient` can provide further action to server (Optional)
+
+For a Reinforcement learning setting, this action server can be considered as a `EnvServer`, which takes in action and return obs. The term of `ActionServer` is to make it more general for other applications other than RL.
 
 *Multi-clients can connect to a edge server. client can call `obs`, `act` impl, and server can call `publish_obs` method. The method is shown in the diagram below.*
 
 ```mermaid
 graph LR
-A[Clients] -- "obs()" --> B((Edge Server))
+A[Clients] -- "obs()" --> B((Action Server))
 A -- "act()" --> B
 B -- "publish_obs()" --> A
 ```
 
-2. **Inference compute as server: `edgeml.InferenceServer` and `edgeml.InferenceClient`**
+1. **Inference compute as server: `edgeml.InferenceServer` and `edgeml.InferenceClient`**
    - `InferenceClient` provides observation to server and gets prediction
 
 *Multi-client to call inference compute. client can call the `call` method*
@@ -68,14 +70,14 @@ A -- "send_request()" --> B
 
 > For detailed example, please refer to the test scripts in `edgeml/tests/`.
 
-1. **Edge Device as Server**
+1. **A RL Env as Action Server**
 
-An edge device (Agent) can send observations to a remote client. The client, in turn, can provide actions to the agent based on these observations. This uses the `edgeml.ActorServer` and `edgeml.ActorClient` classes.
+The environment can send observations to a remote client. The client, in turn, can provide actions to the environment server. This uses the `edgeml.ActionServer` and `edgeml.ActionClient` classes.
 
 **GPU Compute as client**
 ```py
 model = load_model()
-agent = edgeml.ActorClient('localhost', 6379, task_id='mnist', config=agent_config)
+agent = edgeml.ActionClient('localhost', 6379, task_id='mnist', config=agent_config)
 
 for _ in range(100):
     observation = agent.get_observation()
@@ -93,12 +95,12 @@ def observation_callback(keys):
     # TODO: return the desired observations here
     return {"cam1": "some_value"}
 
-config = edgeml.ActorConfig(port_number=6379, action_keys=['move'], observation_keys=['cam1'])
-agent_server = edgeml.ActorServer(config, observation_callback, action_callback)
+config = edgeml.ActionConfig(port_number=6379, action_keys=['move'], observation_keys=['cam1'])
+agent_server = edgeml.ActionServer(config, observation_callback, action_callback)
 agent_server.start()
 ```
 
-3. **Agent as client and inference as server**
+1. **Agent as client and inference as server**
 
 This uses the `edgeml.InferenceServer` and `edgeml.InferenceClient` classes. This is useful for low power edge devices that cannot run inference locally.
 
@@ -129,28 +131,38 @@ A remote trainer receives observations from an edge device (Agent) and sends upd
 ```py
 env = gym.make('CartPole-v0')
 observation = env.reset()
-config = edgeml.TrainerConfig(port_number=6379, broadcast_port=6380)
+
+def recv_weights(new_weights):
+    agent.update_weights(new_weights)
+
+config = TrainerConfig(data_table=[DataTable(name="agent1", size=2)])
 trainer = edgeml.TrainerClient('localhost', config)
+trainer.register_callback(recv_weights)
 agent = make_agent()  # Arbitrary agent
 
 while True:
     action = agent.get_action(observation)
     observation, reward, done, info = env.step(action)
     # or we can use callback function to receive new weights
-    new_weights = trainer.train_step({"observation": observation})
+    trainer.train_step("agent1", {"observation": observation})
     agent.update_weights(new_weights)
 ```
 
 **Trainer (Remote compute)**
 
 ```py
-def train_step(payload):
+def train_step(table_name, payload):
     # TODO: do some training based on observation
-    return new_weights
+    MagicLearner().insert(payload)
+    return {} # optional return new weights
 
-config = edgeml.TrainerConfig(port_number=6379, broadcast_port=6380)
+config = edgeml.TrainerConfig(data_table=[DataTable(name="agent1", size=2)])
 trainer_server = edgeml.TrainerServer(config, train_step)
-trainer_server.start()
+trainer_server.start(threaded=True)
+while True:
+    time.sleep(10) # every 10 seconds
+    new_weights = MagicLearner().train()
+    trainer_server.publish_weights(new_weights)
 ```
 
 ## Notes
@@ -158,7 +170,7 @@ trainer_server.start()
 - Run test cases to make sure everything is working as expected.
 
 ```bash
-python3 edgeml/tests/test_actor.py
+python3 edgeml/tests/test_action.py
 python3 edgeml/tests/test_inference.py
 python3 edgeml/tests/test_trainer.py
 

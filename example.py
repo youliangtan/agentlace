@@ -1,7 +1,7 @@
 # !/usr/bin/env python3
 
 import argparse
-from edgeml.interfaces import ActorClient, ActorServer, ActorConfig
+from edgeml.interfaces import ActionClient, ActionServer, ActionConfig
 import cv2
 import time
 
@@ -37,7 +37,7 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=5556)
     args = parser.parse_args()
 
-    config = ActorConfig(
+    config = ActionConfig(
         port_number = args.port,
         action_keys = ["init", "move", "gripper", "reset", "start"],
         observation_keys = ["image", "proprio"],
@@ -47,7 +47,7 @@ if __name__ == "__main__":
     CLIENT_TIMEOUT = 8
 
     if args.server:
-        server = ActorServer(config, obs_callback=obs_callback, act_callback=act_callback)
+        server = ActionServer(config, obs_callback=obs_callback, act_callback=act_callback)
         server.start(threaded=True)
 
         # broadcast observations stream every 1 second
@@ -56,7 +56,7 @@ if __name__ == "__main__":
             server.publish_obs({"depth_image": "test-broadcast publish impl"})
 
     if args.client:
-        client = ActorClient(args.ip, config)
+        client = ActionClient(args.ip, config)
         
         sub_count = 0
         def sub_callback(obs: dict):

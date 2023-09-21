@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from __future__ import annotations
 from typing import Optional, Callable, Set, Dict, List
 from typing_extensions import Protocol
 from collections import deque
@@ -13,12 +14,14 @@ import threading
 import logging
 from pydantic import BaseModel
 import json
+import pickle
+
 
 ##############################################################################
 
 
-class ActorConfig(BaseModel):
-    """Configuration for the edge server and client
+class ActionConfig(BaseModel):
+    """Configuration for the env server and client
     NOTE: Client and server should have the same config
             client will raise Error if configs are different, thus can use
             `version` to check for compatibility
@@ -34,7 +37,7 @@ class ObsCallback(Protocol):
     """
     Define the data type of the callback function
         :param keys: Set of keys of the observation, defaults to all keys
-        :return: Response to send to the client
+        :return: Response with Observation to send to the client
     """
 
     def __call__(self, keys: Set) -> Dict:
@@ -55,9 +58,9 @@ class ActCallback(Protocol):
 ##############################################################################
 
 
-class ActorServer:
+class ActionServer:
     def __init__(self,
-                 config: ActorConfig,
+                 config: ActionConfig,
                  obs_callback: Optional[ObsCallback],
                  act_callback: Optional[ActCallback],
                  log_level=logging.DEBUG):
@@ -74,13 +77,13 @@ class ActorServer:
                 return act_callback(payload["key"], payload["payload"])
             elif payload["type"] == "hash":
                 config_json = json.dumps(config.dict(), separators=(',', ':'))
-                return {"status": "success", "payload": config_json}
-            return {"status": "error", "message": "Invalid payload"}
+                return {"success": True, "payload": config_json}
+            return {"success": False, "message": "Invalid payload"}
 
         self.config = config
         self.server = ReqRepServer(config.port_number, __obs_parser_cb)
         logging.basicConfig(level=log_level)
-        logging.debug(f"Edge server is listening on port {config.port_number}")
+        logging.debug(f"Action server is listening on port {config.port_number}")
 
         if config.broadcast_port is not None:
             self.broadcast = BroadcastServer(config.broadcast_port)
@@ -100,7 +103,7 @@ class ActorServer:
     def publish_obs(self, payload: dict) -> bool:
         """
         Publishes the observation to the broadcast server,
-        Enable broadcasting by defining `broadcast_port` in `ActorConfig`
+        Enable broadcasting by defining `broadcast_port` in `ActionConfig`
         """
         if self.config.broadcast_port is None:
             logging.warning("Broadcast server not initialized")
@@ -115,13 +118,13 @@ class ActorServer:
 ##############################################################################
 
 
-class ActorClient:
-    def __init__(self, server_ip: str, config: ActorConfig):
+class ActionClient:
+    def __init__(self, server_ip: str, config: ActionConfig):
         self.client = ReqRepClient(server_ip, config.port_number)
         # Check hash of server config to ensure compatibility
         res = self.client.send_msg({"type": "hash"})
         if res is None:
-            raise Exception("Failed to connect to server")
+            raise Exception("Failed to connect to action server")
 
         config_json = json.dumps(config.dict(), separators=(',', ':'))
         if compute_hash(config_json) != compute_hash(res["payload"]):
@@ -195,7 +198,7 @@ class InferenceServer:
                 interface_name = payload.get('interface')
                 if interface_name and interface_name in self.interfaces:
                     return self.interfaces[interface_name](payload['payload'])
-            return {"status": "error", "message": "Invalid interface or payload"}
+            return {"success": False, "message": "Invalid interface or payload"}
 
         self.server = ReqRepServer(port_num, __parser_cb)
         self.interfaces = {}
@@ -253,6 +256,13 @@ class InferenceClient:
 ##############################################################################
 
 
+class DataTable(BaseModel):
+    """Data table to store data or replay buffer"""
+    name: str
+    size: int = 5
+    fifo: bool = True  # use maxheap if false, not implemented yet
+
+
 class TrainerConfig(BaseModel):
     """
     Configuration for the edge server and client
@@ -262,7 +272,7 @@ class TrainerConfig(BaseModel):
     """
     port_number: int
     broadcast_port: int
-    queue_size: int = 1
+    data_table: List[DataTable]
     request_types: List[str] = []
     rate_limit: Optional[int] = None
     version: str = "0.0.1"
@@ -271,11 +281,12 @@ class TrainerConfig(BaseModel):
 class TrainerCallback(Protocol):
     """
     Define the data type of the trainer callback function
+        :param table_name: Name of the table to store the data
         :param payload: Payload to send to the trainer, e.g. training data
         :return: Response to send to the client, can return updated weights.
     """
 
-    def __call__(self, payload: dict) -> dict:
+    def __call__(self, table_name, payload: dict) -> dict:
         ...
 
 
@@ -308,32 +319,48 @@ class TrainerServer:
         """
         self.queue = deque()  # FIFO queue
         self.request_types = set(config.request_types)  # faster lookup
+        self.data_store = {}
+        self.config = config
+
+        for _ds in config.data_table:
+            self.data_store[_ds.name] = deque(maxlen=_ds.size)
 
         def __callback_impl(data: dict) -> dict:
             _type, _payload = data.get("type"), data.get("payload")
             if _type == "data":
-                if len(self.queue) >= config.queue_size:
-                    self.queue.popleft()
-                self.queue.append(_payload)
-                return train_callback(_payload)
+                table_name = data.get("table_name")
+                if table_name not in self.data_store:
+                    return {"success": False, "message": "Invalid table name"}
+                self.data_store[table_name].append(_payload)
+                return train_callback(table_name, _payload)
             elif _type == "hash":
-                print("hash", config.json())
+                # print("config", config.json())
                 config_json = json.dumps(config.dict(), separators=(',', ':'))
-                return {"status": "success", "payload": config_json}
+                return {"success": True, "payload": config_json}
             elif _type in self.request_types:
                 return request_callback(_type, _payload) if request_callback else {}
-            return {"status": "error", "message": "Invalid type or payload"}
+            return {"success": False, "message": "Invalid type or payload"}
 
         self.req_rep_server = ReqRepServer(config.port_number, __callback_impl)
         self.broadcast_server = BroadcastServer(config.broadcast_port)
         logging.basicConfig(level=log_level)
         logging.debug(f"Trainer server is listening on port {config.port_number}")
 
-    def get_data(self) -> List[dict]:
+    def table_names(self) -> Set[str]:
+        """
+        Returns the set of table names available on the server
+            :return: Set of table names available on the server
+        """
+        return set(self.data_store.keys())
+
+    def get_data(self, table_name: str) -> Optional[List[dict]]:
         """
         Get the list of training data, max size is `config.queue_size`
+            :return: List of training data,
+                     return None if table_name is invalid
         """
-        return list(self.queue)
+        data = self.data_store.get(table_name, None)
+        return None if data is None else list(data)
 
     def publish_weights(self, payload: dict):
         """
@@ -352,9 +379,35 @@ class TrainerServer:
         else:
             self.req_rep_server.run()
 
+    def save_data(self, file_name: str):
+        """save the data to a pkl file"""
+        _save_data = {"config": self.config, "data_store": self.data_store}
+        with open(file_name, "wb") as f:
+            pickle.dump(_save_data, f)
+
     def stop(self):
         """Stop the server"""
         self.req_rep_server.stop()
+
+    @staticmethod
+    def make_from_file(file_name: str,
+                       train_callback,
+                       request_callback: Optional[RequestCallback] = None,
+                       log_level=logging.DEBUG) -> TrainerServer:
+        """
+        Load the and construct TrainerServer from a previously saved pkl file
+            :return: TrainerServer object, None if failed to load
+        """
+        try:
+            with open(file_name, "rb") as f:
+                file = pickle.load(f)
+            server = TrainerServer(
+                file["config"], train_callback, request_callback, log_level)
+            server.data_store = file["data_store"]  # load data
+            return server
+        except Exception as e:
+            logging.error(f"Failed to load file: {e}")
+        return None
 
 ##############################################################################
 
@@ -374,6 +427,7 @@ class TrainerClient:
         self.server_ip = server_ip
         self.config = config
         self.request_types = set(config.request_types)  # faster lookup
+        self.table_names = set([_ds.name for _ds in config.data_table])
 
         res = self.req_rep_client.send_msg({"type": "hash"})
         if res is None:
@@ -388,15 +442,19 @@ class TrainerClient:
         logging.debug(
             f"Initiated trainer client at {server_ip}:{config.port_number}")
 
-    def train_step(self, data: dict) -> Optional[dict]:
+    def train_step(self, table_name: str, data: dict) -> Optional[dict]:
         """
         Performs a training step with the given payload.
         NOTE: This is a blocking call. If the trainer needs more time to process,
         use the publish_weights() method in the server instead.
+            :param table_name: Name of the table to store the data
             :param data: Payload to send to the trainer
             :return: Response from the trainer, return None if timeout
         """
-        msg = {"type": "data", "payload": data}
+        if table_name not in self.table_names:
+            raise Exception(f"Invalid table name: {table_name}")
+
+        msg = {"type": "data", "table_name": table_name, "payload": data}
         if self.config.rate_limit and \
                 time.time() - self.last_request_time < 1 / self.config.rate_limit:
             logging.warning("Rate limit exceeded")
@@ -407,6 +465,7 @@ class TrainerClient:
     def request(self, type: str, payload: dict) -> Optional[dict]:
         """
         Call the trainer server with custom requests
+        Some common use cases: checkpointing, get-stats, etc.
             :param type: Name of the custom request, defined in `config.request_types`
             :param payload: Payload to send to the trainer
             :return: Response from the trainer, return None if timeout
