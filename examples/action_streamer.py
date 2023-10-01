@@ -1,24 +1,38 @@
 # !/usr/bin/env python3
 
+# a simple example of the action server capturing image from webcam and
+# the client requesting for the image, and displaying it
+
 import argparse
 from edgeml.interfaces import ActionClient, ActionServer, ActionConfig
+from edgeml.internal.utils import mat_to_jpeg, jpeg_to_mat
 import cv2
 import time
 
+##############################################################################
+
 # Capture image from webcam
 cap = cv2.VideoCapture(0)
+CLIENT_TIMEOUT = 8
+
+
 
 def obs_callback(keys: set) -> dict:
+    """
+    this reads the image from the webcam and send it to the client
+    """
     print("Observation requested from client: ", keys)
-    # img = cv2.imread("edgeml/tests/test_image.png")    
+    # img = cv2.imread("edgeml/tests/test_image.png")
     ret, img = cap.read()
 
     if not ret:
         print("Error capturing image from webcam.")
         return {'image': None}
 
-    obj = {"image": img}
+    # convert to jpeg for compression, but can also send raw image as well
+    obj = {"image": mat_to_jpeg(img)}
     return obj
+
 
 def act_callback(key: str, payload: dict) -> dict:
     print("action requested from client! ", key)
@@ -27,6 +41,7 @@ def act_callback(key: str, payload: dict) -> dict:
     return {}
 
 ##############################################################################
+
 
 if __name__ == "__main__":
     # NOTE: This is just for Testing
@@ -38,16 +53,16 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config = ActionConfig(
-        port_number = args.port,
-        action_keys = ["init", "move", "gripper", "reset", "start"],
-        observation_keys = ["image", "proprio"],
+        port_number=args.port,
+        action_keys=["init", "move", "gripper", "reset", "start"],
+        observation_keys=["image", "proprio"],
         broadcast_port=5557
     )
 
-    CLIENT_TIMEOUT = 8
-
     if args.server:
-        server = ActionServer(config, obs_callback=obs_callback, act_callback=act_callback)
+        server = ActionServer(config,
+                              obs_callback=obs_callback,
+                              act_callback=act_callback)
         server.start(threaded=True)
 
         # broadcast observations stream every 1 second
@@ -57,8 +72,9 @@ if __name__ == "__main__":
 
     if args.client:
         client = ActionClient(args.ip, config)
-        
+
         sub_count = 0
+
         def sub_callback(obs: dict):
             global sub_count
             sub_count += 1
@@ -71,18 +87,21 @@ if __name__ == "__main__":
         while time.time() < end_time:
             start = time.time()
             obs = client.obs()
-            img = obs["image"]
-            
+            img = jpeg_to_mat(obs["image"])
+
             assert img is not None
             # assert img.shape == (256, 256, 3)
 
             cv2.imshow("image", img)
-            if cv2.waitKey(100) & 0xFF == ord('q'):  # Wait for 200 ms; quit on 'q' keypress
+            # Wait for 100 ms; quit on 'q' keypress
+            if cv2.waitKey(100) & 0xFF == ord('q'):
                 break
+
             print("Time taken to get image: ", time.time() - start)
 
         cv2.destroyAllWindows()
-        assert sub_count == CLIENT_TIMEOUT, f"Expected {CLIENT_TIMEOUT} messages, got {sub_count}"
+        assert sub_count == CLIENT_TIMEOUT, \
+            f"Expected {CLIENT_TIMEOUT} messages, got {sub_count}"
         res = client.act("move")
         assert res["move"] == "success"
 

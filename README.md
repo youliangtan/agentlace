@@ -1,6 +1,6 @@
 # edgeml
 
-A simple framework for distributed machine learning library for edge computing. It is common for edge device to be limited by GPU compute. This library enables distributed datastream from edge device to GPU compute for various ml applications. The lib mainly based on client-server architecutre, enable simple TCP communication between multiple clients to server.
+A simple framework for distributed machine learning library for edge computing. Given the compute limitations of many edge devices, especially in terms of GPU capabilities, EdgeML facilitates distributed data streams from these devices to GPU-enhanced computes. Utilizing a client-server architecture, the library establishes handles the transport layer of numerous clients and a server.
 
 ## Installation
 
@@ -8,23 +8,33 @@ A simple framework for distributed machine learning library for edge computing. 
 pip install -e .
 ```
 
+For ReplayBuffer datastore functionality, install [jax](https://jax.readthedocs.io/en/latest/installation.html).
+
 ## Run example
 
+1. Video streamer example
+
 ```bash
-python3 example.py --server
+python3 examples/action_streamer.py --server
 ```
 
 On a different terminal, you can also run it on a different machine and provide custom ip address and port number. e.g. `--ip 100.10.23.23`
 
 ```bash
-python3 example.py --client
+python3 examples/action_streamer.py --client
+```
+
+2. Replay buffer example
+
+```bash
+python3 examples/simple_replay_buffer.py
 ```
 
 ---
 
 ## Architecture
 
-There are three types of server-client main types of classes for user to use, according to their application. Functional programming is mainly used as the API design. User can define their own callback function to process the data. There are mainly 3 modes: `action`, `inference`, `trainer`.
+There are three types of server-client main types of classes for user to use, according to their application. Functional programming is mainly used as the API design. User can define their own callback function to process the data. There are 3 primary modes: `action`, `inference`, `trainer`.
 
 1. **Action service (edge device) as server: `edgeml.ActionServer` and `edgeml.ActionClient`**
    - `ActionServer` provides observation to client
@@ -53,22 +63,28 @@ C[Client 2] -- "call()" --> B
 ```
 
 3. **Trainer compute as server: `edgeml.TrainerServer` and `edgeml.TrainerClient`**
-   - `TrainerClient` provides observation to server and gets new weights
+   - `TrainerClient` provides consistent datastore update to server and gets new network
 
-*Multi-client to call trainer compute. client can call the `train_step` method. `publish_weights` method can also be used to publish weights to all clients. `get_data` method can be used to get cached data from clients.*
+This supports distributed datastore, and enable multiple clients to send data to server. The server can then publish the new network to all clients.
+
+*Clients can keep their own instance of their datastore, can call the `update()` method to provide the latest datastore update to the trainer server. Trainer can have its own instance of the datastore, retrieve the data and provide the trained network to client via `publish_network()` method*
 
 ```mermaid
 graph LR
-A[Clients] -- "train_step()" --> B((Trainer Server))
-B -- "publish_weights()" --> A
+A[ClientA] -- "update()" --> B((Trainer Server))
+B -- "publish_network()" --> A
 A -- "send_request()" --> B
+C[DatastoreA] <--> A
+B <--> E["Datastore(s)"]
+F[DatastoreB] <--> G[ClientB]
+G <--> B
 ```
 
 ---
 
 ## Example Usage
 
-> For detailed example, please refer to the test scripts in `edgeml/tests/`.
+> For more examples, please refer to the test scripts in `edgeml/tests/` and `examples`.
 
 1. **A RL Env as Action Server**
 
@@ -124,7 +140,8 @@ res = client.call("voice_reg", {"audio": "serialized_audio"})
 
 2. **Remote Training Example for an RL Application**
 
-A remote trainer receives observations from an edge device (Agent) and sends updated weights back. The Agent then updates its model with these new weights. This uses the `edgeml.TrainerServer` and `edgeml.TrainerClient` classes.
+A remote trainer can access the datastore updated by edge devices (Agents) and sends updated network back. The Agent then updates its model with these new network. This uses the `edgeml.TrainerServer` and `edgeml.TrainerClient` classes.
+
 
 **Client**
 
@@ -132,40 +149,49 @@ A remote trainer receives observations from an edge device (Agent) and sends upd
 env = gym.make('CartPole-v0')
 observation = env.reset()
 
-def recv_weights(new_weights):
+# create data store and register to trainer client
+data_store = edgeml.data.ReplayBuffer(capacity=2)
+trainer_client = edgeml.TrainerClient(
+    "agent1", 'localhost', TrainerConfig(), data_store)
+
+# register callback function to receive new weights
+agent = make_agent()  # Arbitrary RL agent
+def _recv_weights(new_weights):
     agent.update_weights(new_weights)
 
-config = TrainerConfig(data_table=[DataTable(name="agent1", size=2)])
-trainer = edgeml.TrainerClient('localhost', config)
-trainer.register_callback(recv_weights)
-agent = make_agent()  # Arbitrary agent
+trainer_client.recv_network_callback(_recv_weights)
 
+# automatically update datastore every 10 seconds
+trainer.client.start_async_update(interval=10)
+
+# Run training steps
 while True:
     action = agent.get_action(observation)
     observation, reward, done, info = env.step(action)
-    # or we can use callback function to receive new weights
-    trainer.train_step("agent1", {"observation": observation})
-    agent.update_weights(new_weights)
+    data_store.insert(observation)
 ```
 
 **Trainer (Remote compute)**
 
 ```py
-def train_step(table_name, payload):
-    # TODO: do some training based on observation
-    MagicLearner().insert(payload)
-    return {} # optional return new weights
+trainer_server = edgeml.TrainerServer(edgeml.TrainerConfig())
 
-config = edgeml.TrainerConfig(data_table=[DataTable(name="agent1", size=2)])
-trainer_server = edgeml.TrainerServer(config, train_step)
+# create datastore in server
+data_store = edgeml.data.ReplayBuffer(capacity=2)
+trainer_server.register_data_store("agent1", data_store)
+
 trainer_server.start(threaded=True)
+
 while True:
     time.sleep(10) # every 10 seconds
-    new_weights = MagicLearner().train()
-    trainer_server.publish_weights(new_weights)
+    _data = data_store.sample(...) # sample data from datastore
+    new_weights = MagicLearner().train(_data)
+    trainer_server.publish_network(new_weights)
 ```
 
-## Notes
+---
+
+## Additional Notes
 
 - Run test cases to make sure everything is working as expected.
 
@@ -176,6 +202,9 @@ python3 edgeml/tests/test_trainer.py
 
 # Run all tests
 python3 edgeml/tests/test_all.py
+
+# Run specific test
+pytest-3 edgeml/tests/test_replay_buffer.py
 ```
 
 - The current implementation mainly uses zeromq as communication protocol, it should be easy to extend it to support other protocols such as grpc. (TODO: impl abstract function when there is a need)
