@@ -137,6 +137,50 @@ class FutureSampler(Sampler):
 
         return self._access(future_indices, ep_begin, ep_end, dataset, source_name)
 
+##############################################################################
+
+
+class PrioritySampler(Sampler):
+    def __init__(self, priorities: np.ndarray, alpha=1.0, source=None):
+        """
+        Initializes the PrioritySampler with given priorities.
+        # TODO complete this
+
+        Args:
+        - priorities: An array of priority values where the index in the 
+                      array corresponds to the index in the dataset.
+                      Higher values mean higher priority.
+        - alpha: Exponent to which the priorities are raised before normalization.
+                 This can be used to skew the distribution of samples.
+        - source: The source from which to sample.
+        """
+        self.priorities = priorities
+        self.alpha = alpha
+        self.source = source
+        self._update_probs()
+        raise NotImplementedError("PrioritySampler is not fully implemented yet")
+
+    def _update_probs(self):
+        """Updates the sampling probabilities based on the priorities."""
+        probs = np.power(self.priorities, self.alpha)
+        self.probs = probs / np.sum(probs)
+
+    def sample(self, sampled_idx, ep_begin, ep_end, key, dataset, source_name):
+        indices = jax.random.choice(key, a=len(self.probs), p=self.probs,
+                                    shape=sampled_idx.shape)
+        return self._access(indices, ep_begin, ep_end, dataset, source_name)
+
+    def update_priorities(self, idx, priorities):
+        """
+        Update the priorities for the given indices.
+
+        Args:
+        - idx (list or np.ndarray): Indices to update.
+        - priorities (list or np.ndarray): Corresponding new priorities.
+        """
+        self.priorities[idx] = priorities
+        self._update_probs()
+
 
 ##############################################################################
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from edgeml.interfaces import InferenceClient, InferenceServer
+from edgeml.inference import InferenceClient, InferenceServer
 
 def test_inference():
     # Test functions for server interfaces
@@ -48,7 +48,7 @@ def test_inference():
 
     # Test calling an unknown interface
     response = client.call("unknown", {})
-    assert response["status"] == "error", "Server did not handle unknown interface"
+    assert not response["success"], "Server did not handle unknown interface"
 
     print("[test_inference] All tests passed!")
 

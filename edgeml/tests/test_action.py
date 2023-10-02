@@ -3,7 +3,7 @@
 import cv2
 import time
 import logging
-from edgeml.interfaces import ActionClient, ActionServer, ActionConfig
+from edgeml.action import ActionClient, ActionServer, ActionConfig
 
 def test_action():
     # 1. Read the image using OpenCV

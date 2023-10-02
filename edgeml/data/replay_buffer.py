@@ -215,9 +215,8 @@ class ReplayBuffer(DataStoreBase):
         loaded_data = np.load(path)
         return self.deserialize(loaded_data, device)
 
-    @classmethod
+    @staticmethod
     def deserialize(
-        self,
         loaded_data: Dict,
         device: Optional[jax.Device] = None,
     ):

@@ -10,7 +10,7 @@ pip install -e .
 
 For ReplayBuffer datastore functionality, install [jax](https://jax.readthedocs.io/en/latest/installation.html).
 
-## Run example
+## Quick Start
 
 1. Video streamer example
 
@@ -28,6 +28,8 @@ python3 examples/action_streamer.py --client
 
 ```bash
 python3 examples/simple_replay_buffer.py
+
+## then try out --server and --client mode on 2 separate terminals
 ```
 
 ---
@@ -116,7 +118,7 @@ agent_server = edgeml.ActionServer(config, observation_callback, action_callback
 agent_server.start()
 ```
 
-1. **Agent as client and inference as server**
+2. **Agent as client and inference as server**
 
 This uses the `edgeml.InferenceServer` and `edgeml.InferenceClient` classes. This is useful for low power edge devices that cannot run inference locally.
 
@@ -138,7 +140,7 @@ client = edgeml.InferenceClient('localhost', 6379)
 res = client.call("voice_reg", {"audio": "serialized_audio"})
 ```
 
-2. **Remote Training Example for an RL Application**
+3. **Remote Training Example for an RL Application**
 
 A remote trainer can access the datastore updated by edge devices (Agents) and sends updated network back. The Agent then updates its model with these new network. This uses the `edgeml.TrainerServer` and `edgeml.TrainerClient` classes.
 
