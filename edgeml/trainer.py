@@ -95,8 +95,8 @@ class TrainerServer:
                 return request_callback(_type, _payload) if request_callback else {}
             return {"success": False, "message": "Invalid type or payload"}
 
-        self.req_rep_server = ReqRepServer(config.port_number, __callback_impl)
-        self.broadcast_server = BroadcastServer(config.broadcast_port)
+        self.req_rep_server = ReqRepServer(config.port_number, __callback_impl, log_level=log_level)
+        self.broadcast_server = BroadcastServer(config.broadcast_port, log_level=log_level)
         logging.basicConfig(level=log_level)
         logging.debug(f"Trainer server is listening on port {config.port_number}")
 
@@ -156,7 +156,7 @@ class TrainerClient:
             :param log_level: Logging level
         """
         self.name = name
-        self.req_rep_client = ReqRepClient(server_ip, config.port_number)
+        self.req_rep_client = ReqRepClient(server_ip, config.port_number, log_level=log_level)
         self.server_ip = server_ip
         self.config = config
         self.request_types = set(config.request_types)  # faster lookup
@@ -164,6 +164,7 @@ class TrainerClient:
         self.last_sync_data_id = -1
         self.update_thread = None
         self.last_request_time = 0
+        self.log_level = log_level
         logging.basicConfig(level=log_level)
 
         res = self.req_rep_client.send_msg({"type": "hash"})
@@ -233,7 +234,7 @@ class TrainerClient:
     def recv_network_callback(self, callback: Callable[[dict], None]):
         """Registers the callback function for receiving an updated network"""
         self.broadcast_client = BroadcastClient(
-            self.server_ip, self.config.broadcast_port)
+            self.server_ip, self.config.broadcast_port, log_level=self.log_level)
         self.broadcast_client.async_start(callback)
 
     def start_async_update(self, interval: int = 10):
