@@ -29,7 +29,7 @@ class Sampler:
                key: np.ndarray,
                dataset: Dict[str, np.ndarray],
                source_name: str
-               ) -> Tuple[np.ndarray, np.ndarray]:
+               ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
         """
         Sample from the data according to the config.
 

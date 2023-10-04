@@ -22,7 +22,7 @@ def main():
 
     # Make the replay bufffer
     replay_buffer = ReplayBuffer(
-        capacity=5,
+        capacity=100000,
         data_shapes=[
             DataShape("observations", env.observation_space.shape),
             DataShape("actions", env.action_space.shape),
@@ -53,7 +53,9 @@ def main():
         chex.assert_trees_all_equal_shapes(params, agent.state.params)
         agent = agent.replace(state=agent.state.replace(params=params))
 
-    client.start_async_update(0.1)
+    # TODO (YL) fix this async update
+    # client.start_async_update(1)
+
     client.recv_network_callback(update_params)
     for step in tqdm.trange(1000000):
         # Sample action
@@ -76,6 +78,7 @@ def main():
         )
 
         obs = next_obs
+        client.update()  # sync update the datastore
 
         # Handle termination
         if done or truncated:

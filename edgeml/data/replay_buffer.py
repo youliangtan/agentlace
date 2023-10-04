@@ -156,7 +156,7 @@ class ReplayBuffer(DataStoreBase):
         sampler_name: str,
         batch_size: int,
         force_indices: Optional[jax.Array] = None,
-    ) -> Dict[str, jax.Array]:
+    ) -> Tuple[Dict[str, jax.Array], Dict[str, jax.Array]]:
         """
         Sample a batch of data from the data store.
 
@@ -165,13 +165,17 @@ class ReplayBuffer(DataStoreBase):
             batch_size: the batch size
             force_indices: if not None, force the sample to use these indices instead of sampling randomly.
                 Assumed to be of shape (batch_size,) and smaller than the last valid index in the data store.
+                
+        Return:
+            sampled_data: a dict of str-array pairs
+            mask: a dict of str-array pairs indicating which data points are valid
         """
         if sampler_name not in self._sample_impls:
             raise ValueError(f"Sampler {sampler_name} not registered")
 
         rng, key = jax.random.split(self._sample_rng)
         sample_impl = self._sample_impls[sampler_name]
-        sampled_data = sample_impl(
+        sampled_data, mask = sample_impl(
             dataset=self.dataset,
             metadata=self.metadata,
             rng=key,
@@ -181,7 +185,7 @@ class ReplayBuffer(DataStoreBase):
             sampled_idcs=force_indices,
         )
         self._sample_rng = rng
-        return sampled_data
+        return sampled_data, mask
 
     def serialized(self):
         dataset_dict = {

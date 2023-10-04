@@ -18,7 +18,7 @@ from common import make_agent
 
 def main():
     data_store: ReplayBuffer = ReplayBuffer(
-        capacity=100000,
+        capacity=100000,  # the capacity should be the same as inference.py
         data_shapes=[
             DataShape("observations", (17,)),
             DataShape("actions", (6,)),
@@ -71,9 +71,10 @@ def main():
     import itertools
     for train_step in tqdm.tqdm(itertools.count(), desc="Training"):
         # Sample from RB
-        batch = data_store.sample(128)
+        batch, mask = data_store.sample("train", 10)
 
         # Update agent
+        # TODO: mask accessed in the update method of agent
         agent, update_info = agent.update(batch)
 
         # Logging
