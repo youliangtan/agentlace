@@ -3,6 +3,7 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Tuple, Any
 from collections import deque
+from threading import Lock
 
 from abc import abstractmethod
 
@@ -43,27 +44,32 @@ class QueuedDataStore(DataStoreBase):
     def __init__(self, capacity: int):
         self.queue = deque(maxlen=capacity)
         self.latest_seq_id = -1
+        self._lock = Lock()  # Mutex
 
     def latest_data_id(self) -> int:
         return self.latest_seq_id
 
     def insert(self, data: Any):
+        self._lock.acquire()
         self.latest_seq_id += 1
         self.queue.append((self.latest_seq_id, data))
+        self._lock.release()
 
     def get_latest_data(self, from_id: int) -> Tuple[List[int], Dict]:
         indices = []
         output_data = {"seq_id": [], "data": []}
 
+        self._lock.acquire()
         for idx, (seq_id, data) in enumerate(self.queue):
             if seq_id > from_id:
                 indices.append(idx)
                 output_data["seq_id"].append(seq_id)
                 output_data["data"].append(data)
-
+        self._lock.release()
         return indices, output_data
 
     def update_data(self, indices: List[int], data: Dict):
+        self._lock.acquire()
         assert len(indices) == len(data["seq_id"]) == len(data["data"])
         for i, idx in enumerate(indices):
             _id, _data = data["seq_id"][i], data["data"][i]
@@ -74,6 +80,10 @@ class QueuedDataStore(DataStoreBase):
         # the last data is always the latest
         if len(self.queue) > 0:
             self.latest_seq_id = self.queue[-1][0]
+        self._lock.release()
 
     def __len__(self):
-        return len(self.queue)
+        self._lock.acquire()
+        length = len(self.queue)
+        self._lock.release()
+        return length

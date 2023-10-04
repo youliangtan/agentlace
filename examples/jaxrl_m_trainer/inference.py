@@ -53,10 +53,9 @@ def main():
         chex.assert_trees_all_equal_shapes(params, agent.state.params)
         agent = agent.replace(state=agent.state.replace(params=params))
 
-    # TODO (YL) fix this async update
-    # client.start_async_update(1)
-
+    client.start_async_update(1)
     client.recv_network_callback(update_params)
+
     for step in tqdm.trange(1000000):
         # Sample action
         if step < 1000:
@@ -78,7 +77,8 @@ def main():
         )
 
         obs = next_obs
-        client.update()  # sync update the datastore
+        
+        # client.update()  # or update the trainer's datastore
 
         # Handle termination
         if done or truncated:

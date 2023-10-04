@@ -51,8 +51,8 @@ def main():
     server.start(threaded=True)
 
     # Wait for enough data
-    data_pbar = tqdm.trange(1000, desc="Waiting for data")
-    while len(data_store) < 1000:
+    data_pbar = tqdm.trange(10000, desc="Waiting for data")
+    while len(data_store) < 10000:
         data_pbar.update(len(data_store) - data_pbar.n)
         time.sleep(1)
 

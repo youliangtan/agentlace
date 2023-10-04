@@ -9,6 +9,7 @@ from typing import Dict, Optional, Tuple, List
 
 from edgeml.data.data_store import DataStoreBase
 from edgeml.data.sampler import make_jit_insert, make_jit_sample, Sampler
+import threading
 
 
 DATA_PREFIX = "data/"
@@ -75,6 +76,7 @@ class ReplayBuffer(DataStoreBase):
 
         self._insert_impl = make_jit_insert(device)
         self._sample_impls = {}
+        self._lock = threading.Lock()  # Mutex
 
     def register_sample_config(
         self,
@@ -94,6 +96,7 @@ class ReplayBuffer(DataStoreBase):
         """
         Insert a single data point into the data store.
         """
+        self._lock.acquire()
         self._latest_seq_id += 1  # TODO overflow issue?
 
         # Grab the metadata of the sample we're overwriting
@@ -129,6 +132,7 @@ class ReplayBuffer(DataStoreBase):
             self._sample_end_idx = self._insert_idx
 
         self.size = min(self.size + 1, self.capacity)
+        self._lock.release()
 
         if end_of_trajectory:
             self.end_trajectory()
@@ -137,6 +141,7 @@ class ReplayBuffer(DataStoreBase):
         """
         End a trajectory without inserting any data.
         """
+        self._lock.acquire()
         if not self._trajectory.valid(self._insert_idx):
             # If necessary, roll back the insert index to the beginning of the current trajectory if it's too short
             # We never set ep_end for this trajectory, so no need to rewrite it
@@ -150,6 +155,7 @@ class ReplayBuffer(DataStoreBase):
             # Update the metadata for the next trajectory
             self._trajectory.begin_idx = self._insert_idx
             self._trajectory.id += 1
+        self._lock.release()
 
     def sample(
         self,
@@ -170,6 +176,7 @@ class ReplayBuffer(DataStoreBase):
             sampled_data: a dict of str-array pairs
             mask: a dict of str-array pairs indicating which data points are valid
         """
+        self._lock.acquire()
         if sampler_name not in self._sample_impls:
             raise ValueError(f"Sampler {sampler_name} not registered")
 
@@ -184,10 +191,12 @@ class ReplayBuffer(DataStoreBase):
             sample_end_idx=self._sample_end_idx,
             sampled_idcs=force_indices,
         )
+        self._lock.release()
         self._sample_rng = rng
         return sampled_data, mask
 
     def serialized(self):
+        self._lock.acquire()
         dataset_dict = {
             f"{DATA_PREFIX}{k}": np.asarray(v[: self.size]) for k, v in self.dataset.items()
         }
@@ -195,8 +204,9 @@ class ReplayBuffer(DataStoreBase):
             f"{METADATA_PREFIX}{k}": np.asarray(v[: self.size])
             for k, v in self.metadata.items()
         }
+        self._lock.release()
         # TODO: _sample_begin_idx, _sample_end_idx are not serialized?
-        return {
+        serialized_data = {
             **dataset_dict,
             **metadata_dict,
             **self._trajectory.to_dict(),
@@ -204,6 +214,7 @@ class ReplayBuffer(DataStoreBase):
             "capacity": self.capacity,
             "_insert_idx": self._insert_idx,
         }
+        return serialized_data
 
     def save(self, path: str):
         """Save a data store to a file."""
@@ -265,6 +276,7 @@ class ReplayBuffer(DataStoreBase):
         Note that this data is a form of compact data,
             :return indices, data in dict of str-array pairs
         """
+        self._lock.acquire()
         # Find all indices where the seq_d is greater than the provided seq_id
         indices = jnp.where(self.metadata["seq_id"] > from_id)[0]
 
@@ -277,6 +289,7 @@ class ReplayBuffer(DataStoreBase):
         }
         # NOTE: this will resulted in the Trainer's datastore being readonly since
         #       local stateful variables e.g. traj are not provided in this method
+        self._lock.release()
         data = {
             **dataset_dict,
             **metadata_dict
@@ -288,6 +301,7 @@ class ReplayBuffer(DataStoreBase):
         This method partially update data of the ReplayBuffer,
         in accordance to the indices provided in the data
         """
+        self._lock.acquire()
         # TODO (YL): improve this loop operation
         # Update dataset with the provided data
         for k, v in self.dataset.items():
@@ -305,10 +319,14 @@ class ReplayBuffer(DataStoreBase):
 
         # get largest seq_id in the metadata["seq_id"]
         self._latest_seq_id = np.max(self.metadata["seq_id"])
+        self._lock.release()
 
     def __len__(self):
         """Get the number of valid data points in the data store."""
-        return len(np.where(self.metadata["seq_id"] > 0)[0])
+        self._lock.acquire()
+        length = len(np.where(self.metadata["seq_id"] > 0)[0])
+        self._lock.release()
+        return length
 
 ################################################################################
 
