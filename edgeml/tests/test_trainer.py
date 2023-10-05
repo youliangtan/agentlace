@@ -135,6 +135,8 @@ def test_trainer():
     print("stopping")
     client.stop()
     server.stop()
+    del client
+    del server
 
     print("[test_trainer] All tests passed!\n")
 

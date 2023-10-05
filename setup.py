@@ -14,6 +14,7 @@ setup(
         'typing_extensions',
         'pydantic',
         'opencv-python',
+        'lz4',
     ],
     zip_safe=False
 )

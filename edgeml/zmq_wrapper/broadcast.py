@@ -3,30 +3,35 @@
 from typing import Callable
 import zmq
 import argparse
-import pickle
 import logging
-import zlib
 import threading
+from edgeml.internal.utils import make_compression_method
 
 ##############################################################################
 
 class BroadcastServer:
-    def __init__(self, port=5557, log_level=logging.DEBUG):
+    def __init__(self,
+                 port=5557,
+                 log_level=logging.DEBUG,
+                 compression: str = 'lz4'):
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.PUB)
         self.socket.bind(f"tcp://*:{port}")
+        self.compress, _ = make_compression_method(compression)
         logging.basicConfig(level=log_level)
         logging.debug(f"Publisher server is broadcasting on port {port}")
 
     def broadcast(self, message: dict):
-        serialized = pickle.dumps(message)
-        serialized = zlib.compress(serialized)
+        serialized = self.compress(message)
         self.socket.send(serialized)
 
 ##############################################################################
 
 class BroadcastClient:
-    def __init__(self, ip: str, port=5557, log_level=logging.DEBUG):
+    def __init__(self,
+                 ip: str, port=5557,
+                 log_level=logging.DEBUG, 
+                 comppression: str = 'lz4'):
         self.context = zmq.Context()
         logging.basicConfig(level=log_level)
         logging.debug(f"Subscriber client is connecting to {ip}:{port}")
@@ -34,7 +39,7 @@ class BroadcastClient:
         self.socket = self.context.socket(zmq.SUB)
         self.socket.connect(f"tcp://{ip}:{port}")
         self.socket.setsockopt_string(zmq.SUBSCRIBE, "")  # Subscribe to all messages
-
+        _, self.decompress = make_compression_method(comppression)
         # Set a timeout for the recv method (e.g., 1.5 second)
         self.socket.setsockopt(zmq.RCVTIMEO, 1500)
         self.is_kill = False
@@ -45,8 +50,7 @@ class BroadcastClient:
             while not self.is_kill:
                 try:
                     serialized = self.socket.recv()
-                    serialized = zlib.decompress(serialized)
-                    message = pickle.loads(serialized)
+                    message = self.decompress(serialized)
                     callback(message)
                 except zmq.Again:
                     # Timeout occurred, check is_kill flag again

@@ -65,6 +65,8 @@ def test_action():
     print("[test_action] Cleaning up...")
     server.stop()
     client.stop()
+    del server
+    del client
 
     print("[test_action] All tests passed!")
 
