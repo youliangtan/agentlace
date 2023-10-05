@@ -7,14 +7,14 @@ import chex
 
 import tqdm
 
-from jaxrl_m.agents.continuous.actor_critic import ActorCriticAgent
+from jaxrl_m.agents.continuous.sac import SACAgent
 from jaxrl_m.common.wandb import WandBLogger
 
 from edgeml.trainer import TrainerServer, TrainerConfig
 from edgeml.data.replay_buffer import ReplayBuffer, DataShape
 from edgeml.data.sampler import LatestSampler
 
-from common import make_agent
+from common import make_agent, make_trainer_config
 
 def main():
     data_store: ReplayBuffer = ReplayBuffer(
@@ -25,6 +25,7 @@ def main():
             DataShape("rewards", ()),
             DataShape("terminals", (), dtype="bool"),
             DataShape("next_observations", (17,)),
+            DataShape("masks", ()),
         ],
     )
     data_store.register_sample_config(
@@ -35,11 +36,26 @@ def main():
             "rewards": LatestSampler(),
             "terminals": LatestSampler(),
             "next_observations": LatestSampler(),
+            "masks": LatestSampler(),
         },
     )
 
+    wandb_logger = None
+
+    update_step = 0
+    def stats_callback(type: str, payload: dict) -> dict:
+        """Callback for when server receives stats request."""
+        assert type == "send-stats", "Invalid request type"
+        nonlocal wandb_logger, update_step
+        if wandb_logger is not None:
+            wandb_logger.log(
+                {f"env/{k}": v for k, v in payload.items()},
+                step=update_step,
+            )
+        return {}
+
     # Create server
-    server = TrainerServer(TrainerConfig(), log_level=logging.WARNING)
+    server = TrainerServer(make_trainer_config(), log_level=logging.WARNING, request_callback=stats_callback)
     server.register_data_store("train", data_store)
 
     # Make an agent
@@ -76,6 +92,7 @@ def main():
         # Update agent
         # TODO: mask accessed in the update method of agent
         agent, update_info = agent.update(batch)
+        update_step = train_step
 
         # Logging
         if train_step % 100 == 0:
@@ -85,7 +102,8 @@ def main():
             )
 
         # Update params
-        server.publish_network(agent.state.params)
+        if train_step % 100 == 0:
+            server.publish_network(agent.state.params)
 
 if __name__ == "__main__":
     main()

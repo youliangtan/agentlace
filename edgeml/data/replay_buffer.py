@@ -61,6 +61,7 @@ class ReplayBuffer(DataStoreBase):
         self.metadata = {
             "ep_begin": np.zeros((capacity,), dtype=jnp.int32),
             "ep_end": np.full((capacity,), -1, dtype=jnp.int32),
+            "trajectory_begin_flag": np.zeros((capacity,), dtype=jnp.bool_),
             "trajectory_id": np.full((capacity,), -1, dtype=jnp.int32),
             "seq_id": np.full((capacity,), -1, dtype=jnp.int32),
         }
@@ -113,6 +114,9 @@ class ReplayBuffer(DataStoreBase):
         self.metadata["ep_end"][real_insert_idx] = -1
         self.metadata["trajectory_id"][real_insert_idx] = self._trajectory.id
         self.metadata["seq_id"][real_insert_idx] = self._latest_seq_id
+        self.metadata["trajectory_begin_flag"][real_insert_idx] = (
+            self._insert_idx == self._trajectory.begin_idx
+        )
 
         self._insert_idx += 1
         self._sample_begin_idx = max(
@@ -282,17 +286,17 @@ class ReplayBuffer(DataStoreBase):
 
         # Extract data for those indices
         dataset_dict = {
-            f"{DATA_PREFIX}{k}": jnp.asarray(v[indices]) for k, v in self.dataset.items()
+            k: jnp.asarray(v[indices]) for k, v in self.dataset.items()
         }
         metadata_dict = {
-            f"{METADATA_PREFIX}{k}": jnp.asarray(v[indices]) for k, v in self.metadata.items()
+            k: jnp.asarray(v[indices]) for k, v in self.metadata.items()
         }
         # NOTE: this will resulted in the Trainer's datastore being readonly since
         #       local stateful variables e.g. traj are not provided in this method
         self._lock.release()
         data = {
-            **dataset_dict,
-            **metadata_dict
+            "data": dataset_dict,
+            "metadata": metadata_dict
         }
         return indices, data
 
@@ -301,25 +305,39 @@ class ReplayBuffer(DataStoreBase):
         This method partially update data of the ReplayBuffer,
         in accordance to the indices provided in the data
         """
-        self._lock.acquire()
-        # TODO (YL): improve this loop operation
-        # Update dataset with the provided data
-        for k, v in self.dataset.items():
-            updated_values = data[f"{DATA_PREFIX}{k}"]
-            assert len(updated_values) == len(indices)
-            # Use JAX operations to update values at the specified indices
-            with jax.default_device(self._device):
-                self.dataset[k] = v.at[indices].set(updated_values)
 
-        # Update metadata with the provided metadata
-        for k, v in self.metadata.items():
-            updated_values = data[f"{METADATA_PREFIX}{k}"]
-            assert len(updated_values) == len(indices)
-            v[indices] = updated_values
+        # self._lock.acquire()
+        for i in range(indices.shape[0]):
+            sample = jax.tree_map(lambda x: x[i], data)
+            sample_metadata = sample["metadata"]
+            sample_data = sample["data"]
 
-        # get largest seq_id in the metadata["seq_id"]
-        self._latest_seq_id = np.max(self.metadata["seq_id"])
-        self._lock.release()
+            if sample_metadata["trajectory_begin_flag"]:
+                self.end_trajectory()
+
+            self.insert(
+                sample_data,
+                end_of_trajectory=False,
+            )
+
+        # # TODO (YL): improve this loop operation
+        # # Update dataset with the provided data
+        # for k, v in self.dataset.items():
+        #     updated_values = data[f"{DATA_PREFIX}{k}"]
+        #     assert len(updated_values) == len(indices)
+        #     # Use JAX operations to update values at the specified indices
+        #     with jax.default_device(self._device):
+        #         self.dataset[k] = v.at[indices].set(updated_values)
+
+        # # Update metadata with the provided metadata
+        # for k, v in self.metadata.items():
+        #     updated_values = data[f"{METADATA_PREFIX}{k}"]
+        #     assert len(updated_values) == len(indices)
+        #     v[indices] = updated_values
+
+        # # get largest seq_id in the metadata["seq_id"]
+        # self._latest_seq_id = np.max(self.metadata["seq_id"])
+        # self._lock.release()
 
     def __len__(self):
         """Get the number of valid data points in the data store."""
