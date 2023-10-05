@@ -52,5 +52,9 @@ def test_inference():
 
     print("[test_inference] All tests passed!")
 
+    server.stop()
+    del server
+    del client
+
 if __name__ == "__main__":
     test_inference()

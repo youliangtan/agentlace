@@ -2,12 +2,11 @@
 
 import zmq
 import argparse
-from typing import Optional, Callable, Dict
+from typing import Optional, Dict
 from typing_extensions import Protocol
-import pickle
 import logging
-import zlib
-from edgeml.internal.utils import print_warning
+
+from edgeml.internal.utils import make_compression_method
 
 ##############################################################################
 
@@ -19,47 +18,63 @@ class ReqRepServer:
     def __init__(self,
                  port=5556,
                  impl_callback: Optional[CallbackProtocol]=None,
-                 log_level=logging.DEBUG):
-        self.context = zmq.Context()
-        self.socket = self.context.socket(zmq.REP)
-        self.socket.bind(f"tcp://*:{port}")
-        self.socket.setsockopt(zmq.SNDHWM, 5)
+                 log_level=logging.DEBUG,
+                 compression: str = 'lz4'):
+        """
+        Request reply server
+        """        
         self.impl_callback = impl_callback
-
-        # Set a timeout for the recv method (e.g., 1.5 second)
-        self.socket.setsockopt(zmq.RCVTIMEO, 1500)
-        self.is_kill = False
-        self.thread = None
-
+        self.compress, self.decompress = make_compression_method(compression)
+        self.port = port
+        self.reset()
         logging.basicConfig(level=log_level)
         logging.debug(f"Req-rep server is listening on port {port}")
 
     def run(self):
+        if self.is_kill:
+            logging.debug("Server is prev killed, reseting...")
+            self.reset()
         while not self.is_kill:
             try:
                 #  Wait for next request from client
                 message = self.socket.recv()
-                message = zlib.decompress(message)
-                message = pickle.loads(message)
+                message = self.decompress(message)
                 logging.debug(f"Received new request: {message}")
 
                 #  Send reply back to client
                 if self.impl_callback:
                     res = self.impl_callback(message)
-                    res = pickle.dumps(res)
-                    res = zlib.compress(res)
+                    res = self.compress(res)
                     self.socket.send(res)
                 else:
                     logging.warning("No implementation callback provided.")
                     self.socket.send(b"World")
             except zmq.Again as e:
                 continue
+            except zmq.ZMQError as e:
+                # Handle ZMQ errors gracefully
+                if self.is_kill:
+                    logging.debug("Stopping the ZMQ server...")
+                    break
+                else:
+                    raise e
 
     def stop(self):
-        self.is_kill = True # kill the thread in run
-        if self.thread:
-            self.thread.join()  # ensure the thread exits
+        self.is_kill = True
         self.socket.close()
+        self.context.term()
+
+    def reset(self):
+        self.context = zmq.Context()
+        self.socket = self.context.socket(zmq.REP)
+        self.socket.bind(f"tcp://*:{self.port}")
+        self.socket.setsockopt(zmq.SNDHWM, 5)
+
+        # Set a timeout for the recv method (e.g., 1.5 second)
+        self.socket.setsockopt(zmq.RCVTIMEO, 1500)
+        self.socket.setsockopt(zmq.LINGER, 0)
+        self.is_kill = False
+
 
 ##############################################################################
 
@@ -68,17 +83,20 @@ class ReqRepClient:
                  ip: str,
                  port=5556,
                  timeout_ms = 800,
-                 log_level=logging.DEBUG):
+                 log_level=logging.DEBUG, 
+                 compression: str = 'lz4'):
         """
         :param ip: IP address of the server
         :param port: Port number of the server
         :param timeout_ms: Timeout in milliseconds
         :param log_level: Logging level, defaults to DEBUG
+        :param compression: Compression algorithm, defaults to lz4
         """
         self.context = zmq.Context()
         logging.basicConfig(level=log_level)
         logging.debug(f"Req-rep client is connecting to {ip}:{port}")
 
+        self.compress, self.decompress = make_compression_method(compression)
         self.socket = None
         self.ip, self.port, self.timeout_ms = ip, port, timeout_ms
         self.reset_socket()
@@ -97,17 +115,15 @@ class ReqRepClient:
     def send_msg(self, request: dict) -> Optional[str]:
         # pickle is chosen over protobuf due to faster de/serialization process
         # https://medium.com/@shmulikamar/python-serialization-benchmarks-8e5bb700530b
-        serialized = pickle.dumps(request)
-        serialized = zlib.compress(serialized)
+        serialized = self.compress(request)
         try:
             self.socket.send(serialized)
             message = self.socket.recv()
-            message = zlib.decompress(message)
-            return pickle.loads(message)
+            return self.decompress(message)
         except Exception as e:
             # accepts timeout exception
-            logging.error(f"Failed to send message: {e}")
-            print_warning("WARNING: No response from server. reset socket.")
+            logging.warning(f"Failed to send message: {e}")
+            logging.debug("WARNING: No response from server. reset socket.")
             self.reset_socket()
             return None
 

@@ -4,7 +4,7 @@
 # the client requesting for the image, and displaying it
 
 import argparse
-from edgeml.interfaces import ActionClient, ActionServer, ActionConfig
+from edgeml.action import ActionClient, ActionServer, ActionConfig
 from edgeml.internal.utils import mat_to_jpeg, jpeg_to_mat
 import cv2
 import time
@@ -87,14 +87,15 @@ if __name__ == "__main__":
         while time.time() < end_time:
             start = time.time()
             obs = client.obs()
+            print(f" obs took {time.time() - start} seconds")
             img = jpeg_to_mat(obs["image"])
 
             assert img is not None
             # assert img.shape == (256, 256, 3)
 
             cv2.imshow("image", img)
-            # Wait for 100 ms; quit on 'q' keypress
-            if cv2.waitKey(100) & 0xFF == ord('q'):
+            # Wait for 50 ms; quit on 'q' keypress
+            if cv2.waitKey(50) & 0xFF == ord('q'):
                 break
 
             print("Time taken to get image: ", time.time() - start)

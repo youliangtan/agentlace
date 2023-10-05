@@ -61,7 +61,7 @@ class ActionServer:
                  config: ActionConfig,
                  obs_callback: Optional[ObsCallback],
                  act_callback: Optional[ActCallback],
-                 log_level=logging.DEBUG):
+                 log_level=logging.WARNING):
         """
         Args:
             :param config: Config object
