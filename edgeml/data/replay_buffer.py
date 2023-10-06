@@ -275,7 +275,7 @@ class ReplayBuffer(DataStoreBase):
         return self._latest_seq_id
 
     def get_latest_data(self, from_id: int
-                        ) -> Tuple[jax.Array, Dict[str, jax.Array]]:
+                        ) -> Tuple[jax.Array, Dict[str, Dict[str, jax.Array]]]:
         """
         Note that this data is a form of compact data,
             :return indices, data in dict of str-array pairs
@@ -305,8 +305,9 @@ class ReplayBuffer(DataStoreBase):
         This method partially update data of the ReplayBuffer,
         in accordance to the indices provided in the data
         """
-
-        # self._lock.acquire()
+        # TODO: indices is not needed, remove this in abstract class
+        # length = len(data["metadata"]["ep_end"])
+        # for i in range(length):
         for i in range(indices.shape[0]):
             sample = jax.tree_map(lambda x: x[i], data)
             sample_metadata = sample["metadata"]
@@ -338,6 +339,12 @@ class ReplayBuffer(DataStoreBase):
         # # get largest seq_id in the metadata["seq_id"]
         # self._latest_seq_id = np.max(self.metadata["seq_id"])
         # self._lock.release()
+
+
+    def batch_insert(self, data_list: List[Dict[str, jax.Array]], end_of_trajectory_list: List[bool]):
+        self._lock.acquire()
+        raise NotImplementedError
+        self._lock.release()
 
     def __len__(self):
         """Get the number of valid data points in the data store."""

@@ -6,6 +6,7 @@ import flax
 import chex
 
 import tqdm
+import itertools
 
 from jaxrl_m.agents.continuous.sac import SACAgent
 from jaxrl_m.common.wandb import WandBLogger
@@ -14,7 +15,8 @@ from edgeml.trainer import TrainerServer, TrainerConfig
 from edgeml.data.replay_buffer import ReplayBuffer, DataShape
 from edgeml.data.sampler import LatestSampler
 
-from common import make_agent, make_trainer_config
+from common import make_agent, make_trainer_config, make_wandb_logger
+
 
 def main():
     data_store: ReplayBuffer = ReplayBuffer(
@@ -55,7 +57,9 @@ def main():
         return {}
 
     # Create server
-    server = TrainerServer(make_trainer_config(), log_level=logging.WARNING, request_callback=stats_callback)
+    server = TrainerServer(make_trainer_config(),
+                           log_level=logging.WARNING,
+                           request_callback=stats_callback)
     server.register_data_store("train", data_store)
 
     # Make an agent
@@ -72,25 +76,14 @@ def main():
         data_pbar.update(len(data_store) - data_pbar.n)
         time.sleep(1)
 
-    wandb_config = WandBLogger.get_default_config()
-    wandb_config.update(
-        {
-            "project": "edgeml",
-        }
-    )
-    wandb_logger = WandBLogger(
-        wandb_config=wandb_config,
-        variant={},
-    )
+    wandb_logger = make_wandb_logger()
 
     # Training loop
-    import itertools
     for train_step in tqdm.tqdm(itertools.count(), desc="Training"):
         # Sample from RB
         batch, mask = data_store.sample("train", 10)
 
         # Update agent
-        # TODO: mask accessed in the update method of agent
         agent, update_info = agent.update(batch)
         update_step = train_step
 
@@ -104,6 +97,7 @@ def main():
         # Update params
         if train_step % 100 == 0:
             server.publish_network(agent.state.params)
+
 
 if __name__ == "__main__":
     main()

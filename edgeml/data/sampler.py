@@ -225,6 +225,8 @@ def make_jit_sample(sample_config: dict, device: jax.Device, sample_range: Tuple
                 maxval=sample_end_idx,
                 dtype=np.int32,
             )
+            # NOTE (YL): jit failed, TODO
+            # sampled_idcs = np.arange(sample_begin_idx, sample_end_idx, dtype=np.int32)
 
         ep_begins = np.maximum(metadata["ep_begin"][sampled_idcs], sample_begin_idx)
         ep_ends = np.minimum(metadata["ep_end"][sampled_idcs], sample_end_idx)
