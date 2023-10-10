@@ -12,7 +12,6 @@ setup(
         'zmq',
         'typing',
         'typing_extensions',
-        'pydantic',
         'opencv-python',
         'lz4',
     ],

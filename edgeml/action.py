@@ -11,14 +11,14 @@ from edgeml.internal.utils import compute_hash
 
 import threading
 import logging
-from pydantic import BaseModel
+from dataclasses import dataclass, asdict
 import json
 
 
 ##############################################################################
 
-
-class ActionConfig(BaseModel):
+@dataclass
+class ActionConfig():
     """Configuration for the env server and client
     NOTE: Client and server should have the same config
             client will raise Error if configs are different, thus can use
@@ -74,7 +74,7 @@ class ActionServer:
             elif payload["type"] == "act" and act_callback is not None:
                 return act_callback(payload["key"], payload["payload"])
             elif payload["type"] == "hash":
-                config_json = json.dumps(config.dict(), separators=(',', ':'))
+                config_json = json.dumps(asdict(config), separators=(',', ':'))
                 return {"success": True, "payload": config_json}
             return {"success": False, "message": "Invalid payload"}
 
@@ -124,7 +124,7 @@ class ActionClient:
         if res is None:
             raise Exception("Failed to connect to action server")
 
-        config_json = json.dumps(config.dict(), separators=(',', ':'))
+        config_json = json.dumps(asdict(config), separators=(',', ':'))
         if compute_hash(config_json) != compute_hash(res["payload"]):
             raise Exception(
                 f"Incompatible config with hash with server. "

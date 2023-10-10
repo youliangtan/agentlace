@@ -13,14 +13,15 @@ from edgeml.data.data_store import DataStoreBase
 import time
 import threading
 import logging
-from pydantic import BaseModel
 import json
+from dataclasses import dataclass, asdict, field
 
 
 ##############################################################################
 
 
-class TrainerConfig(BaseModel):
+@dataclass
+class TrainerConfig():
     """
     Configuration for the edge server and client
     NOTE: Client and server should have the same config
@@ -29,7 +30,7 @@ class TrainerConfig(BaseModel):
     """
     port_number: int = 5555
     broadcast_port: int = 5556
-    request_types: List[str] = []
+    request_types: List[str] = field(default_factory=list)
     rate_limit: Optional[int] = None
     version: str = "0.0.1"
 
@@ -83,13 +84,13 @@ class TrainerServer:
                 store_name = data.get("store_name")
                 if store_name not in self.data_stores:
                     return {"success": False, "message": "Invalid table name"}
-                indices, data = _payload.get("indices", []), _payload.get("data", {})
-                self.data_stores[store_name].update_data(indices, data)
+                batch_data = _payload.get("data", [])
+                self.data_stores[store_name].batch_insert(batch_data)
                 if data_callback:
                     data_callback(store_name, _payload)
                 return {"success": True}
             elif _type == "hash":
-                config_json = json.dumps(config.dict(), separators=(',', ':'))
+                config_json = json.dumps(asdict(config), separators=(',', ':'))
                 return {"success": True, "payload": config_json}
             elif _type in self.request_types:
                 return request_callback(_type, _payload) if request_callback else {}
@@ -146,7 +147,8 @@ class TrainerClient:
                  server_ip: str,
                  config: TrainerConfig,
                  data_store: DataStoreBase,
-                 log_level=logging.INFO):
+                 log_level=logging.INFO,
+                 wait_for_server: bool = False):
         """
         Args:
             :param name: Name of the client, creates a unique datastore
@@ -154,9 +156,10 @@ class TrainerClient:
             :param config: Config object
             :param data_store: Datastore to store the data
             :param log_level: Logging level
+            :param wait_for_server: Whether to wait for the server to start
         """
         self.name = name
-        self.req_rep_client = ReqRepClient(server_ip, config.port_number)
+        self.req_rep_client = ReqRepClient(server_ip, config.port_number, log_level=log_level)
         self.server_ip = server_ip
         self.config = config
         self.request_types = set(config.request_types)  # faster lookup
@@ -167,11 +170,19 @@ class TrainerClient:
         logging.basicConfig(level=log_level)
 
         res = self.req_rep_client.send_msg({"type": "hash"})
+
+        # If wait for server
+        if wait_for_server:
+            while res is None:
+                logging.warning("Failed to connect to server, retrying...")
+                time.sleep(2)
+                res = self.req_rep_client.send_msg({"type": "hash"})
+
         if res is None:
             raise Exception("Failed to connect to server")
 
         # try check configuration compatibility
-        config_json = json.dumps(config.dict(), separators=(',', ':'))
+        config_json = json.dumps(asdict(config), separators=(',', ':'))
         if compute_hash(config_json) != compute_hash(res["payload"]):
             raise Exception(
                 f"Incompatible config with hash with server. "
@@ -190,8 +201,8 @@ class TrainerClient:
             :return Response from the trainer, return None if timeout
         """
         latest_id = self.data_store.latest_data_id()
-        indices, data = self.data_store.get_latest_data(self.last_sync_data_id)
-        res = self._update({"indices": indices, "data": data})
+        batch_data = self.data_store.get_latest_data(self.last_sync_data_id)
+        res = self._update({"data": batch_data})
         if res and res["success"]:
             self.last_sync_data_id = latest_id
         else:
@@ -204,7 +215,9 @@ class TrainerClient:
             :param data: Payload to send to the trainer
             :return: Response from the trainer, return None if timeout
         """
-        msg = {"type": "data", "store_name": self.name, "payload": data}
+        msg = {"type": "data",
+               "store_name": self.name,
+               "payload": data}
         if self.config.rate_limit and \
                 time.time() - self.last_request_time < 1 / self.config.rate_limit:
             logging.warning("Rate limit exceeded")
@@ -222,11 +235,13 @@ class TrainerClient:
         """
         if type not in self.request_types:
             return None
-        msg = {"type": type, "payload": payload}
+        msg = {"type": type,
+               "payload": payload}
         if self.config.rate_limit and \
                 time.time() - self.last_request_time < 1 / self.config.rate_limit:
             logging.warning("Rate limit exceeded")
             return None
+
         self.last_request_time = time.time()
         return self.req_rep_client.send_msg(msg)
 

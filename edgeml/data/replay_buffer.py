@@ -64,6 +64,7 @@ class ReplayBuffer(DataStoreBase):
             "seq_id": np.full((capacity,), -1, dtype=jnp.int32),
         }
 
+        DataStoreBase.__init__(self, capacity)
         self.capacity = capacity
         self.size = 0
         self._latest_seq_id = 0
@@ -90,9 +91,10 @@ class ReplayBuffer(DataStoreBase):
         ), f"Sample range {sample_range} must be <= the minimum trajectory length {self._trajectory.min_length}"
         self._sample_impls[name] = make_jit_sample(samplers, self._device, sample_range)
 
-    def insert(self, data: Dict[str, jax.Array], end_of_trajectory: bool):
+    def insert(self, data: Dict[str, jax.Array], end_of_trajectory: bool=False):
         """
         Insert a single data point into the data store.
+        # TODO: end_of_trajectory tag defined in data?
         """
         self._latest_seq_id += 1  # TODO overflow issue?
 
@@ -258,6 +260,7 @@ class ReplayBuffer(DataStoreBase):
     def get_latest_data(self, from_id: int
                         ) -> Tuple[jax.Array, Dict[str, jax.Array]]:
         """
+        # TODO: deprecated, use batch_insert instead
         Note that this data is a form of compact data,
             :return indices, data in dict of str-array pairs
         """
@@ -277,12 +280,14 @@ class ReplayBuffer(DataStoreBase):
             **dataset_dict,
             **metadata_dict
         }
+        raise NotImplementedError
         return indices, data
 
     def update_data(self, indices: jax.Array, data: Dict[str, jax.Array]):
         """
         This method partially update data of the ReplayBuffer,
         in accordance to the indices provided in the data
+        # TODO: this is deprecated, use batch_insert instead
         """
         # TODO (YL): improve this loop operation
         # Update dataset with the provided data
@@ -304,7 +309,7 @@ class ReplayBuffer(DataStoreBase):
 
     def __len__(self):
         """Get the number of valid data points in the data store."""
-        return len(np.where(self.metadata["seq_id"] > 0)[0])
+        return min(self._insert_idx, self.capacity)
 
 ################################################################################
 
