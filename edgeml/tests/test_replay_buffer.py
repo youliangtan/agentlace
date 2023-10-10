@@ -261,6 +261,7 @@ def test_save_and_load_file(data_store: ReplayBuffer):
 def test_data_io_via_seq_id(data_store: ReplayBuffer):
     for i in range(10):
         helper_insert_trajectory(data_store, 5, i)
+    assert len(data_store) == 50
 
     # duplicate the ReplayBuffer
     duplicated_data_store = ReplayBuffer.deserialize(

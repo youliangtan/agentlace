@@ -198,7 +198,7 @@ def expand_to_shape(x: np.ndarray, shape: Tuple[int, ...]) -> np.ndarray:
     return x
 
 
-def make_jit_sample(sample_config: dict, device: jax.Device, sample_range: Tuple[int, int]):
+def make_jit_sample(sample_config: dict, device: jax.Device, sample_range: Tuple[int, int], capacity: int):
     """
     Make a JIT-compiled sample function for a dataset, according to the config.
     """
@@ -225,9 +225,8 @@ def make_jit_sample(sample_config: dict, device: jax.Device, sample_range: Tuple
                 maxval=sample_end_idx,
                 dtype=np.int32,
             )
-            # NOTE (YL): jit failed, TODO
-            # sampled_idcs = np.arange(sample_begin_idx, sample_end_idx, dtype=np.int32)
 
+        sampled_idcs = sampled_idcs%capacity # ensure sampled_idcs is within capacity
         ep_begins = np.maximum(metadata["ep_begin"][sampled_idcs], sample_begin_idx)
         ep_ends = np.minimum(metadata["ep_end"][sampled_idcs], sample_end_idx)
         sampled_idcs = np.clip(
@@ -273,5 +272,4 @@ def make_jit_insert(device: jax.Device):
             lambda k_dataset, k_data: k_dataset.at[insert_idx].set(k_data),
             dataset, data
         )
-
     return jax.jit(_insert_tree_impl, donate_argnums=(0,), device=device)

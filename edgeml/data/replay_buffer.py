@@ -68,7 +68,6 @@ class ReplayBuffer(DataStoreBase):
 
         self.capacity = capacity
         self.size = 0
-        self._latest_seq_id = 0
         self._trajectory = Trajectory(begin_idx=0, id=0, min_length=min_trajectory_length)
         self._sample_begin_idx = 0
         self._sample_end_idx = 0
@@ -91,14 +90,13 @@ class ReplayBuffer(DataStoreBase):
         assert (
             sample_range[1] - sample_range[0] <= self._trajectory.min_length
         ), f"Sample range {sample_range} must be <= the minimum trajectory length {self._trajectory.min_length}"
-        self._sample_impls[name] = make_jit_sample(samplers, self._device, sample_range)
+        self._sample_impls[name] = make_jit_sample(samplers, self._device, sample_range, self.capacity)
 
     def insert(self, data: Dict[str, jax.Array], end_of_trajectory: bool):
         """
         Insert a single data point into the data store.
         """
         self._lock.acquire()
-        self._latest_seq_id += 1  # TODO overflow issue?
 
         # Grab the metadata of the sample we're overwriting
         real_insert_idx = self._insert_idx % self.capacity
@@ -113,12 +111,12 @@ class ReplayBuffer(DataStoreBase):
         self.metadata["ep_begin"][real_insert_idx] = self._trajectory.begin_idx
         self.metadata["ep_end"][real_insert_idx] = -1
         self.metadata["trajectory_id"][real_insert_idx] = self._trajectory.id
-        self.metadata["seq_id"][real_insert_idx] = self._latest_seq_id
+        self.metadata["seq_id"][real_insert_idx] = self._insert_idx
         self.metadata["trajectory_begin_flag"][real_insert_idx] = (
             self._insert_idx == self._trajectory.begin_idx
         )
 
-        self._insert_idx += 1
+        self._insert_idx += 1  ## TODO: overflow issue
         self._sample_begin_idx = max(
             self._sample_begin_idx, self._insert_idx - self.capacity
         )
@@ -259,7 +257,6 @@ class ReplayBuffer(DataStoreBase):
         ]
         replay_buffer = ReplayBuffer(capacity, data_shapes, device=device)
         replay_buffer._trajectory = Trajectory.from_dict(loaded_data)
-        replay_buffer._latest_seq_id = np.max(metadata["seq_id"])
         replay_buffer.size = size
         replay_buffer._insert_idx = insert_idx
 
@@ -272,7 +269,7 @@ class ReplayBuffer(DataStoreBase):
 
     def latest_data_id(self) -> int:
         """return the lastest data id, which is the seq id"""
-        return self._latest_seq_id
+        return self._insert_idx - 1
 
     def get_latest_data(self, from_id: int
                         ) -> Tuple[jax.Array, Dict[str, Dict[str, jax.Array]]]:
@@ -282,6 +279,7 @@ class ReplayBuffer(DataStoreBase):
         """
         self._lock.acquire()
         # Find all indices where the seq_d is greater than the provided seq_id
+        # TODO: O(capacity), not efficient
         indices = jnp.where(self.metadata["seq_id"] > from_id)[0]
 
         # Extract data for those indices
@@ -349,7 +347,7 @@ class ReplayBuffer(DataStoreBase):
     def __len__(self):
         """Get the number of valid data points in the data store."""
         self._lock.acquire()
-        length = len(np.where(self.metadata["seq_id"] > 0)[0])
+        length = min(self._insert_idx, self.capacity)
         self._lock.release()
         return length
 
