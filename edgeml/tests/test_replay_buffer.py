@@ -221,7 +221,7 @@ def test_trajectory_becomes_too_short_from_overwrite(data_store: ReplayBuffer):
 
     for i in range(10):
         helper_insert_trajectory(data_store, 10, i)
-    helper_insert_trajectory(data_store, 8, 0)
+    helper_insert_trajectory(data_store, 8, 10)
 
     assert data_store._sample_begin_idx == 10
     assert data_store._sample_end_idx == 108

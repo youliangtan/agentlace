@@ -151,7 +151,7 @@ class ReplayBuffer(DataStoreBase):
         else:
             # This trajectory is long enough. Mark it as valid.
             self.metadata["ep_end"][
-                self._trajectory.begin_idx: self._insert_idx
+                np.arange(self._trajectory.begin_idx, self._insert_idx) % self.capacity
             ] = self._insert_idx
 
             # Update the metadata for the next trajectory
