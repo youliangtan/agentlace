@@ -32,6 +32,13 @@ python3 examples/simple_replay_buffer.py
 ## then try out --server and --client mode on 2 separate terminals
 ```
 
+3. Async learner-actor with Gym RL env (required `jaxrl_m` as dependency)
+
+```bash
+# indicate --learner or --actor mode, no tag means async multithreaded mode
+python3 examples/async_learner_actor.py
+```
+
 ---
 
 ## Architecture
@@ -156,9 +163,11 @@ data_store = edgeml.data.ReplayBuffer(capacity=2)
 trainer_client = edgeml.TrainerClient(
     "agent1", 'localhost', TrainerConfig(), data_store)
 
-# register callback function to receive new weights
 agent = make_agent()  # Arbitrary RL agent
+
+# register callback function to receive new weights
 def _recv_weights(new_weights):
+    nonlocal agent
     agent.update_weights(new_weights)
 
 trainer_client.recv_network_callback(_recv_weights)
@@ -169,8 +178,8 @@ trainer.client.start_async_update(interval=10)
 # Run training steps
 while True:
     action = agent.get_action(observation)
-    observation, reward, done, info = env.step(action)
-    data_store.insert(observation)
+    _data_point = env.step(action)
+    data_store.insert(_data_point)
 ```
 
 **Trainer (Remote compute)**
@@ -187,7 +196,7 @@ trainer_server.start(threaded=True)
 while True:
     time.sleep(10) # every 10 seconds
     _data = data_store.sample(...) # sample data from datastore
-    new_weights = MagicLearner().train(_data)
+    new_weights = AGENT.train(_data)
     trainer_server.publish_network(new_weights)
 ```
 
