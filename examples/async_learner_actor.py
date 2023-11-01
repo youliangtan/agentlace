@@ -2,6 +2,7 @@
 
 # NOTE: this requires jaxrl_m to be installed:
 #       https://github.com/rail-berkeley/jaxrl_minimal
+# Requires mujoco_py and mujoco==2.2.2
 
 import time
 from functools import partial
@@ -50,6 +51,8 @@ flags.DEFINE_integer("eval_n_trajs", 5, "Number of trajectories for evaluation."
 # flag to indicate if this is a leaner or a actor
 flags.DEFINE_boolean("learner", False, "Is this a learner or a trainer.")
 flags.DEFINE_boolean("actor", False, "Is this a learner or a trainer.")
+flags.DEFINE_boolean("render", False, "Render the environment.")
+flags.DEFINE_string("ip", "localhost", "IP address of the learner.")
 
 
 def print_green(x): return print("\033[92m {}\033[00m" .format(x))
@@ -60,13 +63,14 @@ def print_green(x): return print("\033[92m {}\033[00m" .format(x))
 def actor(agent: SACAgent, data_store, env, sampling_rng, tunnel=None):
     """
     This is the actor loop, which runs when "--actor" is set to True.
-        NOTE: tunnel is used the transport layer for multi-threading
+    NOTE: tunnel is used the transport layer for multi-threading
     """
     if tunnel:
         client = tunnel
     else:
         client = TrainerClient(
-            "actor_env", "localhost",
+            "actor_env",
+            FLAGS.ip,
             make_trainer_config(),
             data_store,
             wait_for_server=True,
@@ -86,7 +90,7 @@ def actor(agent: SACAgent, data_store, env, sampling_rng, tunnel=None):
     obs, _ = env.reset()
     done = False
 
-    # either use client.update() or client.start_async_update(
+    # NOTE: either use client.update() or client.start_async_update()
     # client.start_async_update(interval=1)  # every 1 sec
 
     # training loop
@@ -130,6 +134,9 @@ def actor(agent: SACAgent, data_store, env, sampling_rng, tunnel=None):
             if done or truncated:
                 running_return = 0.0
                 obs, _ = env.reset()
+
+        if FLAGS.render:
+            env.render()
 
         if step % FLAGS.steps_per_update == 0:
             client.update()
@@ -215,7 +222,7 @@ def learner(agent, replay_buffer, wandb_logger=None, tunnel=None):
 
 
 def main(_):
-    devices = jax.local_devices()
+    devices = jax.local_devices()[:1]
     num_devices = len(devices)
     sharding = jax.sharding.PositionalSharding(devices)
     assert FLAGS.batch_size % num_devices == 0
@@ -224,7 +231,10 @@ def main(_):
     rng = jax.random.PRNGKey(FLAGS.seed)
 
     # create env and load dataset
-    env = gym.make(FLAGS.env)
+    if FLAGS.render:
+        env = gym.make(FLAGS.env, render_mode="human")
+    else:
+        env = gym.make(FLAGS.env)
 
     rng, sampling_rng = jax.random.split(rng)
     agent: SACAgent = make_agent(

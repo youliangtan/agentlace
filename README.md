@@ -32,10 +32,12 @@ python3 examples/simple_replay_buffer.py
 ## then try out --server and --client mode on 2 separate terminals
 ```
 
-3. Async learner-actor with Gym RL env (required `jaxrl_m` as dependency)
+3. Async learner-actor with Gym RL env (requires `jaxrl_m` as dependency)
 
 ```bash
-# indicate --learner or --actor mode, no tag means async multithreaded mode
+# Indicate --learner or --actor mode, no tag means async multithreaded mode
+# provide --ip for remote connection, default is localhost
+# use --render to render the gym env
 python3 examples/async_learner_actor.py
 ```
 
