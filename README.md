@@ -1,6 +1,6 @@
 # edgeml
 
-A simple framework for distributed machine learning library for edge computing. Given the compute limitations of many edge devices, especially in terms of GPU capabilities, EdgeML facilitates distributed data streams from these devices to GPU-enhanced computes. Utilizing a client-server architecture, the library establishes handles the transport layer of numerous clients and a server.
+A simple framework for distributed machine learning applications with edge devices. Given the limitations of GPU compute for many edge devices, EdgeML facilitates a distributed data stream between edge devices and a remote GPU server. Built on a client-server architecture, EdgeML efficiently manages the transport layer for multiple clients and a central server. Moreover, Edgeml also enables async operations and inter-processes communications between different processes on a single machine.
 
 ## Installation
 
