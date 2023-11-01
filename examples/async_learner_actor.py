@@ -222,7 +222,7 @@ def learner(agent, replay_buffer, wandb_logger=None, tunnel=None):
 
 
 def main(_):
-    devices = jax.local_devices()[:1]
+    devices = jax.local_devices()
     num_devices = len(devices)
     sharding = jax.sharding.PositionalSharding(devices)
     assert FLAGS.batch_size % num_devices == 0
