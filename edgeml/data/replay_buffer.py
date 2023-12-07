@@ -9,7 +9,6 @@ from typing import Dict, Optional, Tuple, List
 
 from edgeml.data.data_store import DataStoreBase
 from edgeml.data.sampler import make_jit_insert, make_jit_sample, Sampler
-import threading
 
 
 DATA_PREFIX = "data/"
@@ -51,12 +50,11 @@ class ReplayBuffer(DataStoreBase):
             device = jax.devices("cpu")[0]
 
         # Do it on CPU
-        with jax.default_device(device):
-            self.dataset = {
-                _ds.name: jnp.zeros((capacity, *_ds.shape), dtype=_ds.dtype)
-                for _ds in data_shapes
-            }
-            self._sample_rng = jax.random.PRNGKey(seed=seed)
+        self.dataset = {
+            _ds.name: jax.device_put(jnp.zeros((capacity, *_ds.shape), dtype=_ds.dtype), device)
+            for _ds in data_shapes
+        }
+        self._sample_rng = jax.random.PRNGKey(seed=seed)
 
         self.metadata = {
             "ep_begin": np.zeros((capacity,), dtype=jnp.int32),
@@ -77,13 +75,13 @@ class ReplayBuffer(DataStoreBase):
 
         self._insert_impl = make_jit_insert(device)
         self._sample_impls = {}
-        self._lock = threading.Lock()  # Mutex
 
     def register_sample_config(
         self,
         name: str,
         samplers: Dict[str, Sampler],
-        sample_range: Tuple[int, int] = (0, 1)
+        sample_range: Tuple[int, int] = (0, 1),
+        transform: Optional[callable] = None,
     ):
         assert (
             sample_range[1] - sample_range[0] > 0
@@ -91,24 +89,19 @@ class ReplayBuffer(DataStoreBase):
         assert (
             sample_range[1] - sample_range[0] <= self._trajectory.min_length
         ), f"Sample range {sample_range} must be <= the minimum trajectory length {self._trajectory.min_length}"
-        self._sample_impls[name] = make_jit_sample(samplers, self._device, sample_range)
+        self._sample_impls[name] = (make_jit_sample(samplers, self._device, sample_range), transform)
 
     def insert(self, data: Dict[str, jax.Array], end_of_trajectory: bool):
         """
         Insert a single data point into the data store.
         """
-        self._lock.acquire()
         self._latest_seq_id += 1  # TODO overflow issue?
 
         # Grab the metadata of the sample we're overwriting
         real_insert_idx = self._insert_idx % self.capacity
         overwritten_ep_end = self.metadata["ep_end"][real_insert_idx]
 
-        with jax.default_device(self._device):
-            self.dataset = self._insert_impl(
-                self.dataset, data, real_insert_idx)
-        # for k in self.dataset.keys():  # equivalent to _insert_impl above
-        #     self.dataset[k] = self.dataset[k].at[real_insert_idx].set(data[k])
+        self.dataset = self._insert_impl(self.dataset, data, real_insert_idx)
 
         self.metadata["ep_begin"][real_insert_idx] = self._trajectory.begin_idx
         self.metadata["ep_end"][real_insert_idx] = -1
@@ -136,7 +129,6 @@ class ReplayBuffer(DataStoreBase):
             self._sample_end_idx = self._insert_idx
 
         self.size = min(self.size + 1, self.capacity)
-        self._lock.release()
 
         if end_of_trajectory:
             self.end_trajectory()
@@ -145,7 +137,6 @@ class ReplayBuffer(DataStoreBase):
         """
         End a trajectory without inserting any data.
         """
-        self._lock.acquire()
         if not self._trajectory.valid(self._insert_idx):
             # If necessary, roll back the insert index to the beginning of the current trajectory if it's too short
             # We never set ep_end for this trajectory, so no need to rewrite it
@@ -159,7 +150,6 @@ class ReplayBuffer(DataStoreBase):
             # Update the metadata for the next trajectory
             self._trajectory.begin_idx = self._insert_idx
             self._trajectory.id += 1
-        self._lock.release()
 
     def sample(
         self,
@@ -180,12 +170,11 @@ class ReplayBuffer(DataStoreBase):
             sampled_data: a dict of str-array pairs
             mask: a dict of str-array pairs indicating which data points are valid
         """
-        self._lock.acquire()
         if sampler_name not in self._sample_impls:
             raise ValueError(f"Sampler {sampler_name} not registered")
 
         rng, key = jax.random.split(self._sample_rng)
-        sample_impl = self._sample_impls[sampler_name]
+        sample_impl, transform = self._sample_impls[sampler_name]
         sampled_data, mask = sample_impl(
             dataset=self.dataset,
             metadata=self.metadata,
@@ -195,12 +184,14 @@ class ReplayBuffer(DataStoreBase):
             sample_end_idx=self._sample_end_idx,
             sampled_idcs=force_indices,
         )
-        self._lock.release()
+
+        if transform is not None:
+            sampled_data, mask = transform(sampled_data, mask)
+
         self._sample_rng = rng
         return sampled_data, mask
 
     def serialized(self):
-        self._lock.acquire()
         dataset_dict = {
             f"{DATA_PREFIX}{k}": np.asarray(v[: self.size]) for k, v in self.dataset.items()
         }
@@ -208,7 +199,6 @@ class ReplayBuffer(DataStoreBase):
             f"{METADATA_PREFIX}{k}": np.asarray(v[: self.size])
             for k, v in self.metadata.items()
         }
-        self._lock.release()
         # TODO: _sample_begin_idx, _sample_end_idx are not serialized?
         serialized_data = {
             **dataset_dict,
@@ -270,80 +260,10 @@ class ReplayBuffer(DataStoreBase):
             replay_buffer.metadata[k][:size] = v
         return replay_buffer
 
-    def latest_data_id(self) -> int:
-        """return the lastest data id, which is the seq id"""
-        return self._latest_seq_id
-
-    def get_latest_data(self, from_id: int
-                        ) -> Tuple[jax.Array, Dict[str, jax.Array]]:
-        """
-        Note that this data is a form of compact data,
-            :return indices, data in dict of str-array pairs
-        """
-        self._lock.acquire()
-        # Find all indices where the seq_d is greater than the provided seq_id
-        indices = jnp.where(self.metadata["seq_id"] > from_id)[0]
-
-        # Extract data for those indices
-        dataset_dict = {
-            k: jnp.asarray(v[indices]) for k, v in self.dataset.items()
-        }
-        metadata_dict = {
-            k: jnp.asarray(v[indices]) for k, v in self.metadata.items()
-        }
-        # NOTE: this will resulted in the Trainer's datastore being readonly since
-        #       local stateful variables e.g. traj are not provided in this method
-        self._lock.release()
-        data = {
-            "data": dataset_dict,
-            "metadata": metadata_dict
-        }
-        return indices, data
-
-    def update_data(self, indices: jax.Array, data: Dict[str, jax.Array]):
-        """
-        This method partially update data of the ReplayBuffer,
-        in accordance to the indices provided in the data
-        """
-
-        # self._lock.acquire()
-        for i in range(indices.shape[0]):
-            sample = jax.tree_map(lambda x: x[i], data)
-            sample_metadata = sample["metadata"]
-            sample_data = sample["data"]
-
-            if sample_metadata["trajectory_begin_flag"]:
-                self.end_trajectory()
-
-            self.insert(
-                sample_data,
-                end_of_trajectory=False,
-            )
-
-        # # TODO (YL): improve this loop operation
-        # # Update dataset with the provided data
-        # for k, v in self.dataset.items():
-        #     updated_values = data[f"{DATA_PREFIX}{k}"]
-        #     assert len(updated_values) == len(indices)
-        #     # Use JAX operations to update values at the specified indices
-        #     with jax.default_device(self._device):
-        #         self.dataset[k] = v.at[indices].set(updated_values)
-
-        # # Update metadata with the provided metadata
-        # for k, v in self.metadata.items():
-        #     updated_values = data[f"{METADATA_PREFIX}{k}"]
-        #     assert len(updated_values) == len(indices)
-        #     v[indices] = updated_values
-
-        # # get largest seq_id in the metadata["seq_id"]
-        # self._latest_seq_id = np.max(self.metadata["seq_id"])
-        # self._lock.release()
 
     def __len__(self):
         """Get the number of valid data points in the data store."""
-        self._lock.acquire()
         length = len(np.where(self.metadata["seq_id"] > 0)[0])
-        self._lock.release()
         return length
 
 ################################################################################

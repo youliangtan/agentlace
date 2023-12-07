@@ -71,21 +71,18 @@ class LatestSampler(Sampler):
 ##############################################################################
 
 class SequenceSampler(Sampler):
-    def __init__(self, squeeze=False, begin=0, end=1, source=None,
-                 device=jax.devices("cpu")[0]):
+    def __init__(self, squeeze=False, begin=0, end=1, source=None):
         self.squeeze = squeeze
         self.seq_begin = begin
         self.seq_end = end
-        self.device = device
         self.source = source
 
     def sample(self, sampled_idx, ep_begin, ep_end, key, dataset, source_name):
         sequence_len = self.seq_end - self.seq_begin
         assert sequence_len > 0, f"History length must be positive, got {sequence_len}"
-        with jax.default_device(self.device):
-            indices = (
-                np.arange(self.seq_begin, self.seq_end)[None, :] + sampled_idx[:, None]
-            )
+        indices = (
+            np.arange(self.seq_begin, self.seq_end)[None, :] + sampled_idx[:, None]
+        )
         batch_size = sampled_idx.shape[0]
         chex.assert_shape(indices, (batch_size, sequence_len))
 
@@ -227,7 +224,11 @@ def make_jit_sample(sample_config: dict, device: jax.Device, sample_range: Tuple
             )
 
         ep_begins = np.maximum(metadata["ep_begin"][sampled_idcs], sample_begin_idx)
-        ep_ends = np.minimum(metadata["ep_end"][sampled_idcs], sample_end_idx)
+        ep_ends = np.where(
+            metadata["ep_end"][sampled_idcs] == -1,
+            sample_end_idx,
+            np.minimum(metadata["ep_end"][sampled_idcs], sample_end_idx),
+        )
         sampled_idcs = np.clip(
             sampled_idcs, ep_begins - sample_range[0], ep_ends - sample_range[1]
         )
@@ -264,9 +265,6 @@ def make_jit_insert(device: jax.Device):
         Insert the new data into the dataset at the specified index, return the new dataset.
         """
         # Check should never run after JIT
-        # chex.assert_trees_all_equal_shapes_and_dtypes(
-        #     data, jax.tree_map(lambda x: x[0], dataset)
-        # )
         return jax.tree_map(
             lambda k_dataset, k_data: k_dataset.at[insert_idx].set(k_data),
             dataset, data
