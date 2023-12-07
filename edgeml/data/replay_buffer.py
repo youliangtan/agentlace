@@ -66,7 +66,6 @@ class ReplayBuffer(DataStoreBase):
 
         self.capacity = capacity
         self.size = 0
-        self._latest_seq_id = 0
         self._trajectory = Trajectory(begin_idx=0, id=0, min_length=min_trajectory_length)
         self._sample_begin_idx = 0
         self._sample_end_idx = 0
@@ -106,12 +105,12 @@ class ReplayBuffer(DataStoreBase):
         self.metadata["ep_begin"][real_insert_idx] = self._trajectory.begin_idx
         self.metadata["ep_end"][real_insert_idx] = -1
         self.metadata["trajectory_id"][real_insert_idx] = self._trajectory.id
-        self.metadata["seq_id"][real_insert_idx] = self._latest_seq_id
+        self.metadata["seq_id"][real_insert_idx] = self._insert_idx
         self.metadata["trajectory_begin_flag"][real_insert_idx] = (
             self._insert_idx == self._trajectory.begin_idx
         )
 
-        self._insert_idx += 1
+        self._insert_idx += 1  ## TODO: overflow issue
         self._sample_begin_idx = max(
             self._sample_begin_idx, self._insert_idx - self.capacity
         )
@@ -144,7 +143,7 @@ class ReplayBuffer(DataStoreBase):
         else:
             # This trajectory is long enough. Mark it as valid.
             self.metadata["ep_end"][
-                self._trajectory.begin_idx: self._insert_idx
+                np.arange(self._trajectory.begin_idx, self._insert_idx) % self.capacity
             ] = self._insert_idx
 
             # Update the metadata for the next trajectory
@@ -249,7 +248,6 @@ class ReplayBuffer(DataStoreBase):
         ]
         replay_buffer = ReplayBuffer(capacity, data_shapes, device=device)
         replay_buffer._trajectory = Trajectory.from_dict(loaded_data)
-        replay_buffer._latest_seq_id = np.max(metadata["seq_id"])
         replay_buffer.size = size
         replay_buffer._insert_idx = insert_idx
 
@@ -261,9 +259,12 @@ class ReplayBuffer(DataStoreBase):
         return replay_buffer
 
 
+    def batch_insert(self, data_list: List[Dict[str, jax.Array]], end_of_trajectory_list: List[bool]):
+        raise NotImplementedError
+
     def __len__(self):
         """Get the number of valid data points in the data store."""
-        length = len(np.where(self.metadata["seq_id"] > 0)[0])
+        length = np.sum(self.metadata["seq_id"] > 0)
         return length
 
 ################################################################################

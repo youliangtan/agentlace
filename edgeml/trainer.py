@@ -146,7 +146,8 @@ class TrainerClient:
                  server_ip: str,
                  config: TrainerConfig,
                  data_store: DataStoreBase,
-                 log_level=logging.INFO):
+                 log_level=logging.INFO,
+                 wait_for_server: bool = False):
         """
         Args:
             :param name: Name of the client, creates a unique datastore
@@ -168,6 +169,14 @@ class TrainerClient:
         logging.basicConfig(level=log_level)
 
         res = self.req_rep_client.send_msg({"type": "hash"})
+
+        # If wait for server
+        if wait_for_server:
+            while res is None:
+                logging.warning("Failed to connect to server, retrying...")
+                time.sleep(2)
+                res = self.req_rep_client.send_msg({"type": "hash"})
+
         if res is None:
             raise Exception("Failed to connect to server")
 
