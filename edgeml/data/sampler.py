@@ -20,23 +20,25 @@ from enum import IntEnum
 
 class Sampler:
     """Abstract base class for samplers."""
+
     source = None  # default source name
 
-    def sample(self,
-               sampled_idx: np.ndarray,
-               ep_begin: np.ndarray,
-               ep_end: np.ndarray,
-               key: np.ndarray,
-               dataset: Dict[str, np.ndarray],
-               source_name: str
-               ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+    def sample(
+        self,
+        sampled_idx: np.ndarray,
+        ep_begin: np.ndarray,
+        ep_end: np.ndarray,
+        key: np.ndarray,
+        dataset: Dict[str, np.ndarray],
+        source_name: str,
+    ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
         """
         Sample from the data according to the config.
 
         Returns:
             data: the sampled data of shape (batch_size, ...) if a single element is selected,
                 or (batch_size, time, ...) if a sequence is selected (e.g. history)
-            mask: a boolean mask of the sampled data with 
+            mask: a boolean mask of the sampled data with
                 shape (batch_size, ...) or (batch_size, time, ...)
         """
         raise NotImplementedError
@@ -48,8 +50,10 @@ class Sampler:
         if self.source is not None:
             source_name = self.source
             if source_name not in dataset:
-                raise ValueError("Bad sampling config: {config} has \
-                    source {source_name} which is not in the dataset")
+                raise ValueError(
+                    "Bad sampling config: {config} has \
+                    source {source_name} which is not in the dataset"
+                )
 
         dataset_size = dataset[source_name].shape[0]
         mask_ep_begin = expand_to_shape(ep_begin, idx.shape)
@@ -60,6 +64,7 @@ class Sampler:
         ]
         return data, (idx >= mask_ep_begin) & (idx < mask_ep_end)
 
+
 ##############################################################################
 
 
@@ -69,6 +74,7 @@ class LatestSampler(Sampler):
 
 
 ##############################################################################
+
 
 class SequenceSampler(Sampler):
     def __init__(self, squeeze=False, begin=0, end=1, source=None):
@@ -97,14 +103,19 @@ class SequenceSampler(Sampler):
 
 ##############################################################################
 
-class FutureSampler(Sampler):
 
+class FutureSampler(Sampler):
     class Distribution(IntEnum):
         UNIFORM = 0
         EXPONENTIAL = 1
 
-    def __init__(self, distribution=Distribution.UNIFORM, max_future=None,
-                 lambda_=None, source=None):
+    def __init__(
+        self,
+        distribution=Distribution.UNIFORM,
+        max_future=None,
+        lambda_=None,
+        source=None,
+    ):
         """Probability distribution for sampling future indices."""
         self.distribution = distribution
         self.max_future = max_future
@@ -123,7 +134,8 @@ class FutureSampler(Sampler):
                 max_future = np.minimum(ep_end, sampled_idx + max_future_length)
 
             future_indices = jax.random.randint(
-                key, shape=sampled_idx.shape, minval=sampled_idx, maxval=max_future)
+                key, shape=sampled_idx.shape, minval=sampled_idx, maxval=max_future
+            )
 
         elif self.distribution == self.Distribution.EXPONENTIAL:
             offset = jax.random.exponential(key, shape=sampled_idx.shape) * self.lambda_
@@ -133,6 +145,7 @@ class FutureSampler(Sampler):
             raise ValueError(f"Unknown distribution")
 
         return self._access(future_indices, ep_begin, ep_end, dataset, source_name)
+
 
 ##############################################################################
 
@@ -144,7 +157,7 @@ class PrioritySampler(Sampler):
         # TODO complete this
 
         Args:
-        - priorities: An array of priority values where the index in the 
+        - priorities: An array of priority values where the index in the
                       array corresponds to the index in the dataset.
                       Higher values mean higher priority.
         - alpha: Exponent to which the priorities are raised before normalization.
@@ -163,8 +176,9 @@ class PrioritySampler(Sampler):
         self.probs = probs / np.sum(probs)
 
     def sample(self, sampled_idx, ep_begin, ep_end, key, dataset, source_name):
-        indices = jax.random.choice(key, a=len(self.probs), p=self.probs,
-                                    shape=sampled_idx.shape)
+        indices = jax.random.choice(
+            key, a=len(self.probs), p=self.probs, shape=sampled_idx.shape
+        )
         return self._access(indices, ep_begin, ep_end, dataset, source_name)
 
     def update_priorities(self, idx, priorities):
@@ -195,7 +209,12 @@ def expand_to_shape(x: np.ndarray, shape: Tuple[int, ...]) -> np.ndarray:
     return x
 
 
-def make_jit_sample(sample_config: dict, device: jax.Device, sample_range: Tuple[int, int], capacity: int):
+def make_jit_sample(
+    sample_config: dict,
+    device: jax.Device,
+    sample_range: Tuple[int, int],
+    capacity: int,
+):
     """
     Make a JIT-compiled sample function for a dataset, according to the config.
     """
@@ -223,7 +242,7 @@ def make_jit_sample(sample_config: dict, device: jax.Device, sample_range: Tuple
                 dtype=np.int32,
             )
 
-        sampled_idcs = sampled_idcs%capacity # ensure sampled_idcs is within capacity
+        sampled_idcs = sampled_idcs % capacity  # ensure sampled_idcs is within capacity
         ep_begins = np.maximum(metadata["ep_begin"][sampled_idcs], sample_begin_idx)
         ep_ends = np.where(
             metadata["ep_end"][sampled_idcs] == -1,
@@ -268,6 +287,8 @@ def make_jit_insert(device: jax.Device):
         # Check should never run after JIT
         return jax.tree_map(
             lambda k_dataset, k_data: k_dataset.at[insert_idx].set(k_data),
-            dataset, data
+            dataset,
+            data,
         )
+
     return jax.jit(_insert_tree_impl, donate_argnums=(0,), device=device)
