@@ -3,6 +3,7 @@
 import random
 from edgeml.data.replay_buffer import ReplayBuffer, DataShape
 from edgeml.data.sampler import LatestSampler
+from edgeml.data.data_store import QueuedDataStore
 from edgeml.trainer import TrainerClient, TrainerServer, TrainerConfig
 import argparse
 import time
@@ -32,7 +33,7 @@ def create_replay_buffer():
     return replay_buffer
 
 
-def insert_data(replay_buffer):
+def insert_data(data_store):
     """Step 3. Insert data into the replay buffer."""""
     for traj_id in range(3):  # Inserting 3 trajectories
         for idx in range(10):  # Each trajectory has 10 data points
@@ -41,8 +42,10 @@ def insert_data(replay_buffer):
                 "index": idx,
                 "trajectory_id": traj_id,
             }
-            replay_buffer.insert(data, False)
-        replay_buffer.end_trajectory()
+            data_store.insert(data)
+
+        # TODO: end of trajectory should be handle internally in Replaybuffer
+        # data_store.end_trajectory()
 
 
 def sample_data(replay_buffer):
@@ -67,10 +70,11 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.WARNING)
     replay_buffer = create_replay_buffer()
+    t_config = TrainerConfig(port_number=50051, broadcast_port=50052)
 
     if args.server:
-        print("Starting server")
-        server = TrainerServer(TrainerConfig())
+        print("Starting server, use replay buffer")
+        server = TrainerServer(t_config)
         server.register_data_store("table1", replay_buffer)
         server.start(threaded=True)
         print("Server started")
@@ -83,14 +87,15 @@ if __name__ == "__main__":
             server.stop()
 
     elif args.client:
-        print("starting client")
-        client = TrainerClient("table1", args.ip,
-                               TrainerConfig(), replay_buffer)
+        print("starting client, use queue data store")
+        # we can mix and matche datastore on trainer server and client
+        queue_data_store = QueuedDataStore(10)
+        client = TrainerClient("table1", args.ip, t_config, queue_data_store)
         client.start_async_update(3)
         # keyboard interrput
         try:
             while True:
-                insert_data(replay_buffer)
+                insert_data(queue_data_store)
                 time.sleep(3)
         except KeyboardInterrupt:
             print("Stopping client")

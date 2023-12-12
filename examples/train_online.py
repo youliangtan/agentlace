@@ -21,6 +21,7 @@ from jaxrl_m.data.replay_buffer import ReplayBuffer as JaxRLReplayBuffer
 from edgeml.data.replay_buffer import ReplayBuffer, DataShape, Sampler
 from edgeml.data.sampler import LatestSampler, SequenceSampler
 from jaxrl_m.utils.timer_utils import Timer
+from jaxrl_m_common import make_agent, make_wandb_logger
 
 FLAGS = flags.FLAGS
 
@@ -59,29 +60,10 @@ def main(_):
     # seed
     rng = jax.random.PRNGKey(FLAGS.seed)
 
-    config = {}
-
     # set up wandb and logging
-    wandb_config = WandBLogger.get_default_config()
-    wandb_config.group = f"{FLAGS.env}_{FLAGS.agent}"
-
-    exp_description = FLAGS.exp_name or FLAGS.env
-    wandb_config.update(
-        {
-            "project": "jaxrl_minimal_edgeml",
-            "exp_descriptor": exp_description,
-        }
-    )
-    wandb_logger = WandBLogger(
-        wandb_config=wandb_config,
-        variant=config,
-        debug=FLAGS.debug,
-    )
-
-    save_dir = tf.io.gfile.join(
-        FLAGS.save_dir,
-        wandb_logger.config.project,
-        f"{wandb_logger.config.exp_descriptor}_{wandb_logger.config.unique_identifier}",
+    wandb_logger = make_wandb_logger(
+        project="jaxrl_minimal_edgeml",
+        description=FLAGS.exp_name or FLAGS.env
     )
 
     # create env and load dataset
@@ -90,29 +72,9 @@ def main(_):
     eval_env = RecordEpisodeStatistics(eval_env)
 
     rng, sampling_rng = jax.random.split(rng)
-    agent: SACAgent = SACAgent.create_states(
-        rng=jax.random.PRNGKey(0),
-        observations=env.observation_space.sample()[None],
-        actions=env.action_space.sample()[None],
-        policy_kwargs={
-            "tanh_squash_distribution": True,
-            "std_parameterization": "softplus",
-        },
-        critic_network_kwargs={
-            "activations": nn.tanh,
-            "use_layer_norm": True,
-            "hidden_dims": [256, 256],
-        },
-        policy_network_kwargs={
-            "activations": nn.tanh,
-            "use_layer_norm": True,
-            "hidden_dims": [256, 256],
-        },
-        temperature_init=1e-2,
-        discount=0.99,
-        backup_entropy=True,
-        critic_ensemble_size=10,
-        critic_subsample_size=2,
+    agent: SACAgent = make_agent(
+        sample_obs=env.observation_space.sample()[None],
+        sample_action=env.action_space.sample()[None],
     )
 
     # replicate agent across devices
@@ -177,6 +139,7 @@ def main(_):
         },
     )
 
+    # TODO: adding seed to env doesn't work for some reason
     obs, _ = env.reset()
 
     # training loop

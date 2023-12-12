@@ -16,6 +16,7 @@ class BroadcastServer:
                  compression: str = 'lz4'):
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.PUB)
+        self.socket.setsockopt(zmq.SNDHWM, 3)  # queue size 3 for send buffer
         self.socket.bind(f"tcp://*:{port}")
         self.compress, _ = make_compression_method(compression)
         logging.basicConfig(level=log_level)
@@ -42,9 +43,15 @@ class BroadcastClient:
         _, self.decompress = make_compression_method(comppression)
         # Set a timeout for the recv method (e.g., 1.5 second)
         self.socket.setsockopt(zmq.RCVTIMEO, 1500)
+
+        # ZMQ will queue up msg with slow connections. This resulted in
+        # the new updated weights being queued up, actor is not able to learn
+        # https://stackoverflow.com/questions/59542620/zmq-drop-old-messages
+        self.socket.setsockopt(zmq.CONFLATE, True)
+        self.socket.setsockopt(zmq.RCVHWM, 3)  # queue size 3 for receive buffer
         self.is_kill = False
         self.thread = None
-            
+
     def async_start(self, callback: Callable[[dict], None]):
         def async_listen():
             while not self.is_kill:

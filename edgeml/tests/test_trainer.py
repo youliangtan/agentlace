@@ -8,17 +8,17 @@ from edgeml.data.data_store import QueuedDataStore, DataStoreBase
 import numpy as np
 from typing import Any
 
-CAPACITY = 3
+CLIENT_CAPACITY = 3
+SERVER_CAPACITY = 6
 IS_REPLAY_BUFFER = False  # NOTE this is for testing replay buffer
 
 ################################################################################
 
 
-def dummy_training_callback(table_name, payload: Any) -> dict:
+def new_data_callback(table_name, payload: Any) -> dict:
     """Simulated callback for training data."""
     assert table_name == "table1", "Invalid table name"
-    # For the sake of this test, just echo back the data as "weights"
-    return {"weights": payload['data']}
+    return {}
 
 
 def request_callback(type: str, payload: Any) -> dict:
@@ -27,16 +27,16 @@ def request_callback(type: str, payload: Any) -> dict:
     return {"trainer-status": "it's working"}
 
 
-def helper_create_data_store() -> DataStoreBase:
+def helper_create_data_store(capacity) -> DataStoreBase:
     """Helper function to create a data store."""
     if IS_REPLAY_BUFFER:
         from edgeml.data.replay_buffer import ReplayBuffer, DataShape
         ds = ReplayBuffer(
-            capacity=CAPACITY,
+            capacity=capacity,
             data_shapes=[DataShape(name="index", shape=(3,), dtype="int32")]
         )
     else:
-        ds = QueuedDataStore(CAPACITY)
+        ds = QueuedDataStore(capacity)
     return ds
 
 
@@ -47,6 +47,39 @@ def insert_helper(ds: DataStoreBase, data: Any):
         ds.insert(data)
 
 ################################################################################
+
+
+def test_queued_data_store():
+    ds = QueuedDataStore(6)
+
+    assert len(ds) == 0
+    ds.insert(1)
+    ds.insert(2)
+    assert len(ds) == 2
+
+    data_id_2 = ds.latest_data_id()
+    assert len(ds.get_latest_data(data_id_2)) == 0
+
+    ds.insert(3)
+    assert len(ds) == 3
+    assert len(ds.get_latest_data(data_id_2)) == 1
+    
+    ds.batch_insert([4, 5, 6])
+    assert len(ds) == 6
+    data_id_6 = ds.latest_data_id()
+    
+    ds.batch_insert([7, 8, 9])
+    assert len(ds) == 6
+    # 3 is lost since the capacity is 6
+    assert ds.get_latest_data(data_id_2) == [4, 5, 6, 7, 8, 9]
+    assert ds.get_latest_data(data_id_6) == [7, 8, 9]
+    
+    # this checks if batch insert will only insert the last n=6 data
+    # since the capacity is 6
+    data_id_9 = ds.latest_data_id()
+    ds.batch_insert([10, 11, 12, 13, 14, 15, 16, 17])
+    assert ds._data_queue[-1] == 17
+    assert ds.latest_data_id() - data_id_9 == 6
 
 
 def test_trainer():
@@ -65,10 +98,10 @@ def test_trainer():
         broadcast_port=5556,
         request_types=["get-stats"],
     )
-    server = TrainerServer(trainer_config, dummy_training_callback, request_callback)
+    server = TrainerServer(trainer_config, new_data_callback, request_callback)
 
     # register a data store to trainer server
-    ds_server = helper_create_data_store()
+    ds_server = helper_create_data_store(SERVER_CAPACITY)
     server.register_data_store("table1", ds_server)
     server.start(threaded=True)
 
@@ -78,7 +111,7 @@ def test_trainer():
     time.sleep(1)  # Give it a moment to start
 
     # 2. Set up Trainer Client
-    ds_client = helper_create_data_store()
+    ds_client = helper_create_data_store(CLIENT_CAPACITY)
     client = TrainerClient(
         'table1', '127.0.0.1', trainer_config, data_store=ds_client)
     client.recv_network_callback(_network_received_callback)
@@ -108,7 +141,9 @@ def test_trainer():
     assert len(ds_server) == 3
 
     insert_helper(ds_client, np.array([10, 11, 12]))
-    assert len(ds_server) == CAPACITY
+    assert len(ds_client) == CLIENT_CAPACITY
+    client.update() # explicitly call update
+    assert len(ds_server) == 4
 
     # 5. Custom get stats request
     response = client.request("get-stats", {})
@@ -143,4 +178,5 @@ def test_trainer():
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
+    test_queued_data_store()
     test_trainer()
