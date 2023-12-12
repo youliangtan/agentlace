@@ -4,13 +4,18 @@
 #       https://github.com/rail-berkeley/jaxrl_minimal
 
 import jax
+import chex
 import gym
+import numpy as np
+from typing import Optional
 
 from jaxrl_m.agents.continuous.sac import SACAgent
 from jaxrl_m.common.wandb import WandBLogger
 
 from edgeml.trainer import TrainerConfig
 from edgeml.data.data_store import DataStoreBase
+from edgeml.data.replay_buffer import EfficientReplayBuffer, DataShape
+from edgeml.data.sampler import LatestSampler, SequenceSampler
 
 from jaxrl_m.common.wandb import WandBLogger
 from jaxrl_m.agents.continuous.sac import SACAgent
@@ -108,3 +113,56 @@ def make_wandb_logger(
         variant={},
     )
     return wandb_logger
+
+
+def make_efficient_replay_buffer(
+    observation_space: gym.Space,
+    action_space: gym.Space,
+    capacity: int,
+    device: Optional[jax.Device] = None,
+):
+    replay_buffer = EfficientReplayBuffer(
+        capacity=capacity,
+        data_shapes=[
+            DataShape("observations", observation_space.shape, np.float32),
+            DataShape("next_observations", observation_space.shape, np.float32),
+            DataShape("actions", action_space.shape, np.float32),
+            DataShape("rewards", (), np.float32),
+            DataShape("masks", (), np.float32),
+            DataShape("end_of_trajectory", (), dtype="bool"),
+        ],
+        min_trajectory_length=2,
+        device=device,
+    )
+
+    @jax.jit
+    def transform_rl_data(batch, mask):
+        batch_size = jax.tree_util.tree_flatten(batch)[0][0].shape[0]
+        chex.assert_tree_shape_prefix(batch["observations"], (batch_size, 2))
+        chex.assert_tree_shape_prefix(mask["observations"], (batch_size, 2))
+        return {
+            **batch,
+            "observations": batch["observations"][:, 0],
+            "next_observations": batch["observations"][:, 1],
+        }, {
+            **mask,
+            "observations": mask["observations"][:, 0],
+            "next_observations": mask["observations"][:, 1],
+        }
+
+    replay_buffer.register_sample_config(
+        "training",
+        samplers={
+            "observations": SequenceSampler(
+                squeeze=False, begin=0, end=2, source="observations"
+            ),
+            "actions": LatestSampler(),
+            "rewards": LatestSampler(),
+            "masks": LatestSampler(),
+            "next_observations": LatestSampler(),
+            "end_of_trajectory": LatestSampler(),
+        },
+        transform=transform_rl_data,
+        sample_range=(0, 2),
+    )
+    return replay_buffer

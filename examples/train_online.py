@@ -17,9 +17,10 @@ from jaxrl_m.agents.continuous.sac import SACAgent
 from jaxrl_m.common.common import JaxRLTrainState
 from jaxrl_m.common.evaluation import evaluate, supply_rng
 from jaxrl_m.common.wandb import WandBLogger
-from jaxrl_m.data.replay_buffer import ReplayBuffer as JaxRLReplayBuffer
-from edgeml.data.replay_buffer import ReplayBuffer, DataShape, Sampler
+
+from edgeml.data.replay_buffer import EfficientReplayBuffer, DataShape
 from edgeml.data.sampler import LatestSampler, SequenceSampler
+
 from jaxrl_m.utils.timer_utils import Timer
 from jaxrl_m_common import make_agent, make_wandb_logger
 
@@ -83,7 +84,7 @@ def main(_):
     #     jax.tree_map(jnp.array, agent), sharding.replicate()
     # )
 
-    replay_buffer = ReplayBuffer(
+    replay_buffer = EfficientReplayBuffer(
         capacity=FLAGS.replay_buffer_capacity,
         data_shapes=[
             DataShape("observations", env.observation_space.shape, np.float32),
@@ -91,13 +92,14 @@ def main(_):
             DataShape("actions", env.action_space.shape, np.float32),
             DataShape("rewards", (), np.float32),
             DataShape("masks", (), np.float32),
+            DataShape("end_of_trajectory", (), dtype="bool"),
         ],
         min_trajectory_length=2,
     )
 
     @jax.jit
     def transform_rl_data(batch, mask):
-        batch_size = jax.tree_flatten(batch)[0][0].shape[0]
+        batch_size = jax.tree_util.tree_flatten(batch)[0][0].shape[0]
         chex.assert_tree_shape_prefix(batch["observations"], (batch_size, 2))
         chex.assert_tree_shape_prefix(mask["observations"], (batch_size, 2))
         return {
@@ -119,25 +121,11 @@ def main(_):
             "actions": LatestSampler(),
             "rewards": LatestSampler(),
             "masks": LatestSampler(),
+            "next_observations": LatestSampler(),
+            "end_of_trajectory": LatestSampler(),
         },
         transform=transform_rl_data,
         sample_range=(0, 2),
-    )
-    replay_buffer.register_sample_config(
-        "training_dup",
-        samplers={
-            "observations": LatestSampler(),
-            "next_observations": LatestSampler(),
-            "actions": LatestSampler(),
-            "rewards": LatestSampler(),
-            "masks": LatestSampler(),
-        },
-    )
-    replay_buffer.register_sample_config(
-        "policy",
-        samplers={
-            "observations": LatestSampler(),
-        },
     )
 
     # TODO: adding seed to env doesn't work for some reason
@@ -177,6 +165,7 @@ def main(_):
                     actions=actions,
                     rewards=reward,
                     masks=1.0 - done,
+                    end_of_trajectory=done or truncated,
                 ),
                 end_of_trajectory=done or truncated,
             )
@@ -200,7 +189,6 @@ def main(_):
                 agent, update_info = jax.block_until_ready(
                     agent.update_high_utd(batch, utd_ratio=FLAGS.utd_ratio)
                 )
-                # chex.assert_tree_is_on_device(agent, platform="gpu")
 
             if step % FLAGS.log_period == 0:
                 wandb_logger.log(
