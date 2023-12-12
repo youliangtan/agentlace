@@ -242,12 +242,13 @@ def make_jit_sample(
                 dtype=np.int32,
             )
 
-        sampled_idcs = sampled_idcs % capacity  # ensure sampled_idcs is within capacity
-        ep_begins = np.maximum(metadata["ep_begin"][sampled_idcs], sample_begin_idx)
+        sampled_idcs = sampled_idcs
+        sampled_idcs_real = sampled_idcs % capacity
+        ep_begins = np.maximum(metadata["ep_begin"][sampled_idcs_real], sample_begin_idx)
         ep_ends = np.where(
-            metadata["ep_end"][sampled_idcs] == -1,
+            metadata["ep_end"][sampled_idcs_real] == -1,
             sample_end_idx,
-            np.minimum(metadata["ep_end"][sampled_idcs], sample_end_idx),
+            np.minimum(metadata["ep_end"][sampled_idcs_real], sample_end_idx),
         )
         sampled_idcs = np.clip(
             sampled_idcs, ep_begins - sample_range[0], ep_ends - sample_range[1]

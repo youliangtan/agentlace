@@ -16,7 +16,7 @@ def data_store(capacity=100):
             DataShape(name="data"),
             DataShape(name="index", dtype="int32"),
             DataShape(name="trajectory_id", dtype="int32"),
-        ]
+        ],
     )
 
     ds.register_sample_config(
@@ -238,6 +238,7 @@ def test_in_progress_trajectory(data_store: ReplayBuffer):
     )
 
     assert jnp.any(data["trajectory_id"] == 1)
+
 
 def test_in_progress_trajectory_too_short(data_store: ReplayBuffer):
     data_store._trajectory.min_length = 3

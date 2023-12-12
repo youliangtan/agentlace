@@ -96,7 +96,7 @@ def main(_):
         actions=env.action_space.sample()[None],
         policy_kwargs={
             "tanh_squash_distribution": True,
-            "std_parametrization": "softplus",
+            "std_parameterization": "softplus",
         },
         critic_network_kwargs={
             "activations": nn.tanh,
@@ -130,6 +130,7 @@ def main(_):
             DataShape("rewards", (), np.float32),
             DataShape("masks", (), np.float32),
         ],
+        min_trajectory_length=2,
     )
 
     @jax.jit
@@ -247,7 +248,7 @@ def main(_):
         if step % FLAGS.eval_period == 0:
             with timer.context("eval"):
                 evaluate_info = evaluate(
-                    policy_fn=partial(agent.sample_actions, deterministic=True),
+                    policy_fn=partial(agent.sample_actions, argmax=True),
                     env=eval_env,
                     num_episodes=FLAGS.eval_n_trajs,
                 )
