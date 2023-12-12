@@ -7,6 +7,7 @@ from typing_extensions import Protocol
 import logging
 
 from edgeml.internal.utils import make_compression_method
+from threading import Lock
 
 ##############################################################################
 
@@ -99,6 +100,7 @@ class ReqRepClient:
         self.compress, self.decompress = make_compression_method(compression)
         self.socket = None
         self.ip, self.port, self.timeout_ms = ip, port, timeout_ms
+        self._internal_lock = Lock()
         self.reset_socket()
 
     def reset_socket(self):
@@ -113,19 +115,22 @@ class ReqRepClient:
         self.socket.connect(f"tcp://{self.ip}:{self.port}")
 
     def send_msg(self, request: dict) -> Optional[str]:
-        # pickle is chosen over protobuf due to faster de/serialization process
-        # https://medium.com/@shmulikamar/python-serialization-benchmarks-8e5bb700530b
-        serialized = self.compress(request)
-        try:
-            self.socket.send(serialized)
-            message = self.socket.recv()
-            return self.decompress(message)
-        except Exception as e:
-            # accepts timeout exception
-            logging.warning(f"Failed to send message: {e}")
-            logging.debug("WARNING: No response from server. reset socket.")
-            self.reset_socket()
+        if self.socket is None or self.socket.closed:
+            logging.debug("WARNING: Socket is closed, reseting...")
             return None
+
+        serialized = self.compress(request)
+        with self._internal_lock:
+            try:
+                self.socket.send(serialized)
+                message = self.socket.recv()
+                return self.decompress(message)
+            except Exception as e:
+                # accepts timeout exception
+                logging.warning(f"Failed to send message: {e}")
+                logging.debug("WARNING: No res from server. reset socket.")
+                self.reset_socket()
+                return None
 
 
 ##############################################################################

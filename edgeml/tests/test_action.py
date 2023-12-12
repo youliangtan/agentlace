@@ -23,10 +23,10 @@ def test_action():
 
     # Define our config
     config = ActionConfig(
-        port_number=5555,
+        port_number=5588,
         action_keys=['send_image'],
         observation_keys=['test_image'],
-        broadcast_port=5556
+        broadcast_port=5589,
     )
 
     # Initialize and start the ActionServer in a separate thread

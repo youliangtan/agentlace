@@ -66,6 +66,7 @@ class ReplayBuffer(DataStoreBase):
             "seq_id": np.full((capacity,), -1, dtype=jnp.int32),
         }
 
+        DataStoreBase.__init__(self, capacity)
         self.capacity = capacity
         self.size = 0
         self._trajectory = Trajectory(
@@ -97,9 +98,10 @@ class ReplayBuffer(DataStoreBase):
             transform,
         )
 
-    def insert(self, data: Dict[str, jax.Array], end_of_trajectory: bool):
+    def insert(self, data: Dict[str, jax.Array], end_of_trajectory: bool=False):
         """
         Insert a single data point into the data store.
+        # TODO: end_of_trajectory tag defined in data?
         """
         # Grab the metadata of the sample we're overwriting
         real_insert_idx = self._insert_idx % self.capacity
@@ -267,16 +269,63 @@ class ReplayBuffer(DataStoreBase):
             replay_buffer.metadata[k][:size] = v
         return replay_buffer
 
-    def batch_insert(
-        self, data_list: List[Dict[str, jax.Array]], end_of_trajectory_list: List[bool]
-    ):
+    def latest_data_id(self) -> int:
+        """return the lastest data id, which is the seq id"""
+        return self._latest_seq_id
+
+    def get_latest_data(self, from_id: int
+                        ) -> Tuple[jax.Array, Dict[str, jax.Array]]:
+        """
+        # TODO: deprecated, use batch_insert instead
+        Note that this data is a form of compact data,
+            :return indices, data in dict of str-array pairs
+        """
+        # Find all indices where the seq_d is greater than the provided seq_id
+        indices = jnp.where(self.metadata["seq_id"] > from_id)[0]
+
+        # Extract data for those indices
+        dataset_dict = {
+            f"{DATA_PREFIX}{k}": jnp.asarray(v[indices]) for k, v in self.dataset.items()
+        }
+        metadata_dict = {
+            f"{METADATA_PREFIX}{k}": jnp.asarray(v[indices]) for k, v in self.metadata.items()
+        }
+        # NOTE: this will resulted in the Trainer's datastore being readonly since
+        #       local stateful variables e.g. traj are not provided in this method
+        data = {
+            **dataset_dict,
+            **metadata_dict
+        }
         raise NotImplementedError
+        return indices, data
+
+    def update_data(self, indices: jax.Array, data: Dict[str, jax.Array]):
+        """
+        This method partially update data of the ReplayBuffer,
+        in accordance to the indices provided in the data
+        # TODO: this is deprecated, use batch_insert instead
+        """
+        # TODO (YL): improve this loop operation
+        # Update dataset with the provided data
+        for k, v in self.dataset.items():
+            updated_values = data[f"{DATA_PREFIX}{k}"]
+            assert len(updated_values) == len(indices)
+            # Use JAX operations to update values at the specified indices
+            with jax.default_device(self._device):
+                self.dataset[k] = v.at[indices].set(updated_values)
+
+        # Update metadata with the provided metadata
+        for k, v in self.metadata.items():
+            updated_values = data[f"{METADATA_PREFIX}{k}"]
+            assert len(updated_values) == len(indices)
+            v[indices] = updated_values
+
+        # get largest seq_id in the metadata["seq_id"]
+        self._latest_seq_id = np.max(self.metadata["seq_id"])
 
     def __len__(self):
         """Get the number of valid data points in the data store."""
-        length = np.sum(self.metadata["seq_id"] > 0)
-        return length
-
+        return min(self._insert_idx, self.capacity)
 
 ################################################################################
 

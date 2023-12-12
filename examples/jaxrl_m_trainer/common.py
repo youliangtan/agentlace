@@ -1,3 +1,5 @@
+# TODO: remove this
+
 import jax
 from jaxrl_m.common.wandb import WandBLogger
 from jaxrl_m.agents.continuous.sac import SACAgent
@@ -12,7 +14,7 @@ def make_agent(sample_obs, sample_action):
         sample_action,
         policy_kwargs={
             "tanh_squash_distribution": True,
-            "std_parametrization": "softplus",
+            "std_parameterization": "softplus",
         },
         critic_network_kwargs={
             "activations": nn.tanh,

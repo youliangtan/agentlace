@@ -1,33 +1,31 @@
 #!/usr/bin/env python3
 
 from __future__ import annotations
-from typing import Any, Dict, List, Tuple, Any
+from typing import Any, Dict, List, Tuple, Any, Union
 from collections import deque
 from threading import Lock
 
 from abc import abstractmethod
+from threading import Lock
 
 ##############################################################################
 
 
 class DataStoreBase:
+    def __init__(self, capacity: int):
+        self.capacity = capacity
+
     @abstractmethod
     def latest_data_id() -> Any:
         """Return the id of the latest data"""
         pass
 
     @abstractmethod
-    def get_latest_data(self, from_id: Any) -> Tuple[list, dict]:
+    def get_latest_data(self, from_id: Any) -> List[Any]:
         """
         provide the all data from the given id
-            :return indices of the updated data within the store
-                    and it's corresponding data
+            :return a list of data
         """
-        pass
-
-    @abstractmethod
-    def update_data(self, indices: list, data: dict):
-        """with the indices and data, update the latest data"""
         pass
 
     @abstractmethod
@@ -35,14 +33,36 @@ class DataStoreBase:
         """Length of the valid data in the store"""
         pass
 
+    @abstractmethod
+    def insert(self, data: Any):
+        pass
+
+    def batch_insert(self, batch_data: List[Any]):
+        """
+        Insert a batch of data by using `insert()`
+          :param batch_data: a list of data
+
+        NOTE: override this function to create a more efficient
+        implementation for custom data store, e.g. slicing in np
+        """
+        if len(batch_data) > self.capacity:
+            batch_data = batch_data[-self.capacity:]
+        for data in batch_data:
+            self.insert(data)
+
 ##############################################################################
 
 
 class QueuedDataStore(DataStoreBase):
-    """A simple queue-based data store."""
+    """
+    A simple queue-based data store. This can be used as a simple
+    queue for sending a sequence of data to the trainer server replay buffer
+    """
 
     def __init__(self, capacity: int):
-        self.queue = deque(maxlen=capacity)
+        DataStoreBase.__init__(self, capacity)
+        self._seq_id_queue = deque(maxlen=capacity)
+        self._data_queue = deque(maxlen=capacity)
         self.latest_seq_id = -1
         self._lock = Lock()  # Mutex
 
@@ -52,38 +72,23 @@ class QueuedDataStore(DataStoreBase):
     def insert(self, data: Any):
         self._lock.acquire()
         self.latest_seq_id += 1
-        self.queue.append((self.latest_seq_id, data))
+        self._seq_id_queue.append(self.latest_seq_id)
+        self._data_queue.append(data)
         self._lock.release()
 
-    def get_latest_data(self, from_id: int) -> Tuple[List[int], Dict]:
-        indices = []
-        output_data = {"seq_id": [], "data": []}
-
+    def get_latest_data(self, from_id: int) -> List[Any]:
         self._lock.acquire()
-        for idx, (seq_id, data) in enumerate(self.queue):
-            if seq_id > from_id:
-                indices.append(idx)
-                output_data["seq_id"].append(seq_id)
-                output_data["data"].append(data)
+        return_data = []
+        if not self._seq_id_queue or from_id >= self.latest_seq_id:
+            pass
+        elif from_id < self._seq_id_queue[0]:
+            return_data = list(self._data_queue)
+        else:
+            # calc the index where the required data starts in the queue.
+            start_idx = from_id - self._seq_id_queue[0] + 1
+            return_data = list(self._data_queue)[start_idx:]
         self._lock.release()
-        return indices, output_data
-
-    def update_data(self, indices: List[int], data: Dict):
-        self._lock.acquire()
-        assert len(indices) == len(data["seq_id"]) == len(data["data"])
-        for i, idx in enumerate(indices):
-            _id, _data = data["seq_id"][i], data["data"][i]
-            if idx < len(self.queue):
-                self.queue[idx] = (_id, _data)
-            else:
-                self.queue.append((_id, _data))
-        # the last data is always the latest
-        if len(self.queue) > 0:
-            self.latest_seq_id = self.queue[-1][0]
-        self._lock.release()
+        return return_data
 
     def __len__(self):
-        self._lock.acquire()
-        length = len(self.queue)
-        self._lock.release()
-        return length
+        return len(self._seq_id_queue)
