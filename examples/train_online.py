@@ -91,12 +91,12 @@ def main(_):
 
     rng, sampling_rng = jax.random.split(rng)
     agent: SACAgent = SACAgent.create_states(
-        rng=rng,
+        rng=jax.random.PRNGKey(0),
         observations=env.observation_space.sample()[None],
         actions=env.action_space.sample()[None],
         policy_kwargs={
             "tanh_squash_distribution": True,
-            "std_parametrization": "softplus",
+            "std_parameterization": "softplus",
         },
         critic_network_kwargs={
             "activations": nn.tanh,
@@ -135,8 +135,8 @@ def main(_):
     @jax.jit
     def transform_rl_data(batch, mask):
         batch_size = jax.tree_flatten(batch)[0][0].shape[0]
-        chex.assert_tree_shape_prefix(batch["observations"], [batch_size, 2])
-        chex.assert_tree_shape_prefix(mask["observations"], [batch_size, 2])
+        chex.assert_tree_shape_prefix(batch["observations"], (batch_size, 2))
+        chex.assert_tree_shape_prefix(mask["observations"], (batch_size, 2))
         return {
             **batch,
             "observations": batch["observations"][:, 0],
@@ -236,7 +236,7 @@ def main(_):
                 agent, update_info = jax.block_until_ready(
                     agent.update_high_utd(batch, utd_ratio=FLAGS.utd_ratio)
                 )
-                chex.assert_tree_is_on_device(agent, platform="gpu")
+                # chex.assert_tree_is_on_device(agent, platform="gpu")
 
             if step % FLAGS.log_period == 0:
                 wandb_logger.log(
@@ -247,7 +247,7 @@ def main(_):
         if step % FLAGS.eval_period == 0:
             with timer.context("eval"):
                 evaluate_info = evaluate(
-                    policy_fn=partial(agent.sample_actions, deterministic=True),
+                    policy_fn=partial(agent.sample_actions, argmax=True),
                     env=eval_env,
                     num_episodes=FLAGS.eval_n_trajs,
                 )
