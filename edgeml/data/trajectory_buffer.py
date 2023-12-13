@@ -93,16 +93,18 @@ class TrajectoryBuffer():
             sample_range[1] - sample_range[0] <= self._trajectory.min_length
         ), f"Sample range {sample_range} must be <= the minimum trajectory length {self._trajectory.min_length}"
         self._sample_impls[name] = (
-            make_jit_sample(samplers, self._device, sample_range, self.capacity),
+            make_jit_sample(samplers, self._device,
+                            sample_range, self.capacity),
             transform,
         )
 
-    def insert(self, data: Dict[str, jax.Array], end_of_trajectory: bool=False):
+    def insert(self, data: Dict[str, jax.Array], end_of_trajectory: bool = False):
         """
         Insert a single data point into the data store.
         # TODO: end_of_trajectory tag defined in data?
         """
-        end_of_trajectory = data.get("end_of_trajectory", end_of_trajectory) # TODO
+        end_of_trajectory = data.get(
+            "end_of_trajectory", end_of_trajectory)  # TODO
 
         # Grab the metadata of the sample we're overwriting
         real_insert_idx = self._insert_idx % self.capacity
@@ -118,7 +120,7 @@ class TrajectoryBuffer():
             self._insert_idx == self._trajectory.begin_idx
         )
 
-        self._insert_idx += 1  ## TODO: overflow issue
+        self._insert_idx += 1  # TODO: overflow issue
         self._sample_begin_idx = max(
             self._sample_begin_idx, self._insert_idx - self.capacity
         )
@@ -151,7 +153,8 @@ class TrajectoryBuffer():
         else:
             # This trajectory is long enough. Mark it as valid.
             self.metadata["ep_end"][
-                np.arange(self._trajectory.begin_idx, self._insert_idx) % self.capacity
+                np.arange(self._trajectory.begin_idx,
+                          self._insert_idx) % self.capacity
             ] = self._insert_idx
 
             # Update the metadata for the next trajectory

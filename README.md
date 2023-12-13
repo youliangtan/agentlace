@@ -38,6 +38,7 @@ python3 examples/run_data_store.py
 # Indicate --learner or --actor mode, no tag means async multithreaded mode
 # provide --ip for remote connection, default is localhost
 # use --render to render the gym env
+# use --use_traj_buffer to use trajectory buffer instead of replay buffer
 python3 examples/async_learner_actor.py
 ```
 

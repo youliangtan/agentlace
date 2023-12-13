@@ -54,7 +54,7 @@ flags.DEFINE_boolean("render", False, "Render the environment.")
 flags.DEFINE_string("ip", "localhost", "IP address of the learner.")
 
 # experimental with efficient replay buffer
-flags.DEFINE_boolean("use_erb", False, "Use efficient replay buffer.")
+flags.DEFINE_boolean("use_traj_buffer", False, "Use efficient replay buffer.")
 
 def print_green(x): return print("\033[92m {}\033[00m" .format(x))
 
@@ -131,7 +131,7 @@ def actor(agent: SACAgent, data_store, env, sampling_rng, tunnel=None):
                 masks=1.0 - done,
             )
 
-            if FLAGS.use_erb:
+            if FLAGS.use_traj_buffer:
                 # NOTE: end_of_trajectory is used in TrajectoryBuffer
                 data_payload["end_of_trajectory"] = done or truncated
 
@@ -209,7 +209,7 @@ def learner(agent, replay_buffer, wandb_logger=None, tunnel=None, sharding=None)
     for step in tqdm.tqdm(range(FLAGS.max_steps), dynamic_ncols=True, desc="learner"):
         # Train the networks
         with timer.context("sample_replay_buffer"):
-            if FLAGS.use_erb:
+            if FLAGS.use_traj_buffer:
                 batch, mask = replay_buffer.sample(
                     "training", # define in the TrajectoryBuffer.register_sample_config
                     FLAGS.batch_size,
@@ -264,7 +264,7 @@ def main(_):
     )
 
     def create_replay_buffer_and_wandb_logger():
-        if FLAGS.use_erb:
+        if FLAGS.use_traj_buffer:
             print_yellow(f"Using experimental Efficient replay buffer")
             replay_buffer = make_efficient_replay_buffer(
                 env.observation_space,
