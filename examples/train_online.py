@@ -1,4 +1,3 @@
-from copy import deepcopy
 from functools import partial
 
 import chex
@@ -12,13 +11,10 @@ from absl import app, flags
 from flax import linen as nn
 from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
 
-from jaxrl_m.agents import agents
 from jaxrl_m.agents.continuous.sac import SACAgent
-from jaxrl_m.common.common import JaxRLTrainState
-from jaxrl_m.common.evaluation import evaluate, supply_rng
-from jaxrl_m.common.wandb import WandBLogger
+from jaxrl_m.common.evaluation import evaluate
 
-from edgeml.data.replay_buffer import EfficientReplayBuffer, DataShape
+from edgeml.data.trajectory_buffer import TrajectoryBuffer, DataShape
 from edgeml.data.sampler import LatestSampler, SequenceSampler
 
 from jaxrl_m.utils.timer_utils import Timer
@@ -84,7 +80,7 @@ def main(_):
     #     jax.tree_map(jnp.array, agent), sharding.replicate()
     # )
 
-    replay_buffer = EfficientReplayBuffer(
+    replay_buffer = TrajectoryBuffer(
         capacity=FLAGS.replay_buffer_capacity,
         data_shapes=[
             DataShape("observations", env.observation_space.shape, np.float32),

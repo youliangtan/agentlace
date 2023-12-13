@@ -13,7 +13,6 @@ import jax.numpy as jnp
 import numpy as np
 import tqdm
 from absl import app, flags
-from flax import linen as nn
 from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
 
 from jaxrl_m.agents.continuous.sac import SACAgent
@@ -22,8 +21,8 @@ from jaxrl_m.utils.timer_utils import Timer
 
 from edgeml.trainer import TrainerServer, TrainerClient, TrainerTunnel
 from edgeml.data.data_store import QueuedDataStore
+from edgeml.data.jaxrl_data_store import ReplayBufferDataStore
 
-from jaxrl_m_common import ReplayBufferDataStore
 from jaxrl_m_common import make_agent, make_trainer_config, make_wandb_logger, make_efficient_replay_buffer
 
 FLAGS = flags.FLAGS
@@ -133,7 +132,7 @@ def actor(agent: SACAgent, data_store, env, sampling_rng, tunnel=None):
             )
 
             if FLAGS.use_erb:
-                # NOTE: end_of_trajectory is used in EfficientReplayBuffer
+                # NOTE: end_of_trajectory is used in TrajectoryBuffer
                 data_payload["end_of_trajectory"] = done or truncated
 
             data_store.insert(data_payload)
@@ -212,7 +211,7 @@ def learner(agent, replay_buffer, wandb_logger=None, tunnel=None, sharding=None)
         with timer.context("sample_replay_buffer"):
             if FLAGS.use_erb:
                 batch, mask = replay_buffer.sample(
-                    "training", # define in the EfficientReplayBuffer.register_sample_config
+                    "training", # define in the TrajectoryBuffer.register_sample_config
                     FLAGS.batch_size,
                 )
                 # replay_buffer's batch is default in cpu, put it to devices

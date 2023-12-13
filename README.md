@@ -24,10 +24,10 @@ On a different terminal, you can also run it on a different machine and provide 
 python3 examples/action_streamer.py --client
 ```
 
-2. Replay buffer example
+2. Datastore example
 
 ```bash
-python3 examples/simple_replay_buffer.py
+python3 examples/run_data_store.py
 
 ## then try out --server and --client mode on 2 separate terminals
 ```
@@ -217,7 +217,7 @@ python3 edgeml/tests/test_trainer.py
 python3 edgeml/tests/test_all.py
 
 # Run specific test
-pytest-3 edgeml/tests/test_replay_buffer.py
+pytest-3 edgeml/tests/test_data_store.py
 ```
 
 - The current implementation mainly uses zeromq as communication protocol, it should be easy to extend it to support other protocols such as grpc. (TODO: impl abstract function when there is a need)

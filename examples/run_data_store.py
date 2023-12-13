@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 import random
-from edgeml.data.replay_buffer import ReplayBuffer, DataShape
+from edgeml.data.trajectory_buffer import DataShape
+from edgeml.data.jaxrl_data_store import TrajectoryBufferDataStore
+
 from edgeml.data.sampler import LatestSampler
 from edgeml.data.data_store import QueuedDataStore
 from edgeml.trainer import TrainerClient, TrainerServer, TrainerConfig
@@ -12,15 +14,15 @@ import logging
 
 print_green = lambda x: print("\033[92m {}\033[00m" .format(x))
 
-def create_replay_buffer():
-    # Step 1. Create the ReplayBuffer object
+def create_trajectory_buffer():
+    # Step 1. Create the TrajectoryBuffer object
     buffer_capacity = 100
     data_shapes = [
         DataShape(name="data"),
         DataShape(name="index", dtype="int32"),
         DataShape(name="trajectory_id", dtype="int32"),
     ]
-    replay_buffer = ReplayBuffer(capacity=buffer_capacity, data_shapes=data_shapes)
+    replay_buffer = TrajectoryBufferDataStore(capacity=buffer_capacity, data_shapes=data_shapes)
 
     # Step 2. Register the sampler config
     sample_config = {
@@ -44,7 +46,7 @@ def insert_data(data_store):
             }
             data_store.insert(data)
 
-        # TODO: end of trajectory should be handle internally in Replaybuffer
+        # TODO: end of trajectory should be handle internally in TrajectoryBuffer
         # data_store.end_trajectory()
 
 
@@ -69,7 +71,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.WARNING)
-    replay_buffer = create_replay_buffer()
+    replay_buffer = create_trajectory_buffer()
     t_config = TrainerConfig(port_number=50051, broadcast_port=50052)
 
     if args.server:

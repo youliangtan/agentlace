@@ -9,7 +9,6 @@ from typing import Any, Dict, Optional, Tuple, List
 
 from edgeml.data.data_store import DataStoreBase
 from edgeml.data.sampler import make_jit_insert, make_jit_sample, Sampler
-from threading import Lock
 
 
 DATA_PREFIX = "data/"
@@ -23,7 +22,7 @@ class DataShape:
     dtype: str = "float32"
 
 
-class EfficientReplayBuffer(DataStoreBase):
+class TrajectoryBuffer():
     """
     An in-memory data store for storing and sampling data
     from a (typically trajectory) dataset.
@@ -79,7 +78,6 @@ class EfficientReplayBuffer(DataStoreBase):
 
         self._insert_impl = make_jit_insert(device)
         self._sample_impls = {}
-        self._mutex = Lock()
 
     def register_sample_config(
         self,
@@ -104,7 +102,6 @@ class EfficientReplayBuffer(DataStoreBase):
         Insert a single data point into the data store.
         # TODO: end_of_trajectory tag defined in data?
         """
-        self._mutex.acquire()
         end_of_trajectory = data.get("end_of_trajectory", end_of_trajectory) # TODO
 
         # Grab the metadata of the sample we're overwriting
@@ -139,7 +136,6 @@ class EfficientReplayBuffer(DataStoreBase):
             self._sample_end_idx = self._insert_idx
 
         self.size = min(self.size + 1, self.capacity)
-        self._mutex.release()
 
         if end_of_trajectory:
             self.end_trajectory()
@@ -148,7 +144,6 @@ class EfficientReplayBuffer(DataStoreBase):
         """
         End a trajectory without inserting any data.
         """
-        self._mutex.acquire()
         if not self._trajectory.valid(self._insert_idx):
             # If necessary, roll back the insert index to the beginning of the current trajectory if it's too short
             # We never set ep_end for this trajectory, so no need to rewrite it
@@ -162,7 +157,6 @@ class EfficientReplayBuffer(DataStoreBase):
             # Update the metadata for the next trajectory
             self._trajectory.begin_idx = self._insert_idx
             self._trajectory.id += 1
-        self._mutex.release()
 
     def sample(
         self,
@@ -183,7 +177,6 @@ class EfficientReplayBuffer(DataStoreBase):
             sampled_data: a dict of str-array pairs
             mask: a dict of str-array pairs indicating which data points are valid
         """
-        self._mutex.acquire()
         if sampler_name not in self._sample_impls:
             raise ValueError(f"Sampler {sampler_name} not registered")
 
@@ -203,7 +196,6 @@ class EfficientReplayBuffer(DataStoreBase):
             sampled_data, mask = transform(sampled_data, mask)
 
         self._sample_rng = rng
-        self._mutex.release()
         return sampled_data, mask
 
     def serialized(self):
@@ -236,7 +228,7 @@ class EfficientReplayBuffer(DataStoreBase):
         path: str,
         device: Optional[jax.Device] = None,
     ):
-        """Load a data store from a file. Returns a EfficientReplayBuffer object."""
+        """Load a data store from a file. Returns a TrajectoryBuffer object."""
         loaded_data = np.load(path)
         return self.deserialize(loaded_data, device)
 
@@ -245,7 +237,7 @@ class EfficientReplayBuffer(DataStoreBase):
         loaded_data: Dict,
         device: Optional[jax.Device] = None,
     ):
-        """Load a stream of data from a file. Returns a EfficientReplayBuffer object."""
+        """Load a stream of data from a file. Returns a TrajectoryBuffer object."""
         capacity = loaded_data["capacity"]
         size = loaded_data["size"]
         insert_idx = loaded_data["_insert_idx"]
@@ -264,7 +256,7 @@ class EfficientReplayBuffer(DataStoreBase):
             DataShape(name=k, shape=v.shape[1:], dtype=str(v.dtype))
             for k, v in data.items()
         ]
-        replay_buffer = EfficientReplayBuffer(capacity, data_shapes, device=device)
+        replay_buffer = TrajectoryBuffer(capacity, data_shapes, device=device)
         replay_buffer._trajectory = Trajectory.from_dict(loaded_data)
         replay_buffer.size = size
         replay_buffer._insert_idx = insert_idx

@@ -1,8 +1,5 @@
 # !/usr/bin/env python3
 
-# NOTE: this requires jaxrl_m to be installed: 
-#       https://github.com/rail-berkeley/jaxrl_minimal
-
 import jax
 import chex
 import gym
@@ -13,50 +10,15 @@ from jaxrl_m.agents.continuous.sac import SACAgent
 from jaxrl_m.common.wandb import WandBLogger
 
 from edgeml.trainer import TrainerConfig
-from edgeml.data.data_store import DataStoreBase
-from edgeml.data.replay_buffer import EfficientReplayBuffer, DataShape
+from edgeml.data.trajectory_buffer import DataShape
+from edgeml.data.jaxrl_data_store import TrajectoryBufferDataStore
 from edgeml.data.sampler import LatestSampler, SequenceSampler
 
 from jaxrl_m.common.wandb import WandBLogger
 from jaxrl_m.agents.continuous.sac import SACAgent
-from jaxrl_m.data.replay_buffer import ReplayBuffer
 from edgeml.trainer import TrainerConfig
 
-from threading import Lock
-
 from jax import nn
-
-##############################################################################
-
-
-class ReplayBufferDataStore(ReplayBuffer, DataStoreBase):
-    def __init__(
-        self,
-        observation_space: gym.Space,
-        action_space: gym.Space,
-        capacity: int,
-    ):
-        ReplayBuffer.__init__(self, observation_space, action_space, capacity)
-        DataStoreBase.__init__(self, capacity)
-        self._lock = Lock()
-
-    # ensure thread safety
-    def insert(self, *args, **kwargs):
-        with self._lock:
-            super(ReplayBufferDataStore, self).insert(*args, **kwargs)
-
-    # ensure thread safety
-    def sample(self, *args, **kwargs):
-        with self._lock:
-            return super(ReplayBufferDataStore, self).sample(*args, **kwargs)
-
-    # NOTE: method for DataStoreBase
-    def latest_data_id(self):
-        return self._insert_index
-
-    # NOTE: method for DataStoreBase
-    def get_latest_data(self, from_id: int):
-        raise NotImplementedError  # TODO
 
 
 ##############################################################################
@@ -121,7 +83,7 @@ def make_efficient_replay_buffer(
     capacity: int,
     device: Optional[jax.Device] = None,
 ):
-    replay_buffer = EfficientReplayBuffer(
+    replay_buffer = TrajectoryBufferDataStore(
         capacity=capacity,
         data_shapes=[
             DataShape("observations", observation_space.shape, np.float32),
