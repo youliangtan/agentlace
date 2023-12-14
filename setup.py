@@ -1,8 +1,9 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name='edgeml',
     version='0.1.2',
+    packages=find_packages(),
     description='library to enable distributed edge ml training and inference',
     url='https://github.com/youliangtan/edgeml',
     author='auth',

@@ -3,6 +3,7 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Tuple, Any, Union
 from collections import deque
+from threading import Lock
 
 from abc import abstractmethod
 from threading import Lock
@@ -63,7 +64,7 @@ class QueuedDataStore(DataStoreBase):
         self._seq_id_queue = deque(maxlen=capacity)
         self._data_queue = deque(maxlen=capacity)
         self.latest_seq_id = -1
-        self._lock = Lock()
+        self._lock = Lock()  # Mutex
 
     def latest_data_id(self) -> int:
         return self.latest_seq_id

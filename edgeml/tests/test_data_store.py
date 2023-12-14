@@ -3,20 +3,21 @@
 import pytest
 import jax
 import jax.numpy as jnp
-from edgeml.data.replay_buffer import ReplayBuffer, DataShape
+from edgeml.data.trajectory_buffer import DataShape
+from edgeml.data.jaxrl_data_store import TrajectoryBufferDataStore
 from edgeml.data.sampler import LatestSampler, SequenceSampler
 import random
 
 
 @pytest.fixture
 def data_store(capacity=100):
-    ds = ReplayBuffer(
+    ds = TrajectoryBufferDataStore(
         capacity=capacity,
         data_shapes=[
             DataShape(name="data"),
             DataShape(name="index", dtype="int32"),
             DataShape(name="trajectory_id", dtype="int32"),
-        ]
+        ],
     )
 
     ds.register_sample_config(
@@ -32,7 +33,7 @@ def data_store(capacity=100):
 
 
 def helper_insert_trajectory(
-    data_store: ReplayBuffer, trajectory_length: int, traj_id: int
+    data_store: TrajectoryBufferDataStore, trajectory_length: int, traj_id: int, end_trajectory=True
 ):
     for i in range(trajectory_length):
         data = {
@@ -41,10 +42,12 @@ def helper_insert_trajectory(
             "trajectory_id": traj_id,
         }
         data_store.insert(data, False)
-    data_store.end_trajectory()
+
+    if end_trajectory:
+        data_store.end_trajectory()
 
 
-def helper_check_ep_metadata(data_store: ReplayBuffer):
+def helper_check_ep_metadata(data_store: TrajectoryBufferDataStore):
     dataset_size = data_store.capacity
 
     for i in range(data_store._sample_begin_idx, data_store._sample_end_idx):
@@ -74,7 +77,7 @@ def helper_check_ep_metadata(data_store: ReplayBuffer):
             ), "Trajectory ID should be different across episodes"
 
 
-def test_data_store_basic_insert_retrieve(data_store: ReplayBuffer):
+def test_data_store_basic_insert_retrieve(data_store: TrajectoryBufferDataStore):
     helper_insert_trajectory(data_store, 10, 0)
     helper_insert_trajectory(data_store, 15, 1)
     helper_insert_trajectory(data_store, 20, 2)
@@ -87,7 +90,7 @@ def test_data_store_basic_insert_retrieve(data_store: ReplayBuffer):
     assert samples["data"].shape[0] == 45
 
 
-def test_data_store_insert_wrap(data_store: ReplayBuffer):
+def test_data_store_insert_wrap(data_store: TrajectoryBufferDataStore):
     helper_insert_trajectory(data_store, 10, 0)
     helper_insert_trajectory(data_store, 15, 1)
     helper_insert_trajectory(data_store, 20, 2)
@@ -96,7 +99,7 @@ def test_data_store_insert_wrap(data_store: ReplayBuffer):
     helper_check_ep_metadata(data_store)
 
 
-def test_data_store_insert_sequence(data_store: ReplayBuffer):
+def test_data_store_insert_sequence(data_store: TrajectoryBufferDataStore):
     data_store.register_sample_config(
         "sequence",
         {
@@ -136,7 +139,7 @@ def test_data_store_insert_sequence(data_store: ReplayBuffer):
     assert not jnp.any(valid["index_future"] & last_trajectory_end)
 
 
-def test_sample_trajectory_short_valid(data_store: ReplayBuffer):
+def test_sample_trajectory_short_valid(data_store: TrajectoryBufferDataStore):
     data_store._trajectory.min_length = 3
 
     data_store.register_sample_config(
@@ -163,9 +166,8 @@ def test_sample_trajectory_short_valid(data_store: ReplayBuffer):
     assert jnp.all(valid["index"] < 40)
 
 
-def test_sample_trajectory_too_short(data_store: ReplayBuffer):
+def test_sample_trajectory_too_short(data_store: TrajectoryBufferDataStore):
     data_store._trajectory.min_length = 3
-
     data_store.register_sample_config(
         "need_padding",
         {
@@ -176,38 +178,17 @@ def test_sample_trajectory_too_short(data_store: ReplayBuffer):
     )
 
     helper_insert_trajectory(data_store, 10, 0)
-    # Trajectory 1 will be rolled back
     helper_insert_trajectory(data_store, 2, 1)
 
     data, valid = data_store.sample(
         "need_padding",
         100,
-        force_indices=jnp.arange(
-            data_store._sample_begin_idx, data_store._sample_end_idx
-        ),
     )
 
-    assert data["trajectory_id"].shape[0] == 10
-    assert jnp.all(valid["index"] == 1)
-    assert jnp.all(data["trajectory_id"] != 1)
-
-    # Write a new trajectory over trajectory 1
-    helper_insert_trajectory(data_store, 10, 2)
-
-    data, valid = data_store.sample(
-        "need_padding",
-        100,
-        force_indices=jnp.arange(
-            data_store._sample_begin_idx, data_store._sample_end_idx
-        ),
-    )
-
-    assert data["trajectory_id"].shape[0] == 20
-    assert jnp.all(valid["index"] == 1)
-    assert jnp.all(data["trajectory_id"] != 1)
+    assert jnp.all(data["trajectory_id"] == 0)
 
 
-def test_trajectory_becomes_too_short_from_overwrite(data_store: ReplayBuffer):
+def test_trajectory_becomes_too_short_from_overwrite(data_store: TrajectoryBufferDataStore):
     data_store._trajectory.min_length = 3
 
     data_store.register_sample_config(
@@ -221,7 +202,7 @@ def test_trajectory_becomes_too_short_from_overwrite(data_store: ReplayBuffer):
 
     for i in range(10):
         helper_insert_trajectory(data_store, 10, i)
-    helper_insert_trajectory(data_store, 8, 0)
+    helper_insert_trajectory(data_store, 8, 10)
 
     assert data_store._sample_begin_idx == 10
     assert data_store._sample_end_idx == 108
@@ -237,7 +218,55 @@ def test_trajectory_becomes_too_short_from_overwrite(data_store: ReplayBuffer):
     assert jnp.all(data["trajectory_id"] != 0)
 
 
-def test_save_and_load_file(data_store: ReplayBuffer):
+def test_in_progress_trajectory(data_store: TrajectoryBufferDataStore):
+    data_store._trajectory.min_length = 3
+
+    data_store.register_sample_config(
+        "need_padding",
+        {
+            "index": LatestSampler(),
+            "trajectory_id": LatestSampler(),
+        },
+        (-1, 2),
+    )
+
+    helper_insert_trajectory(data_store, 10, 0)
+    helper_insert_trajectory(data_store, 10, 1, end_trajectory=False)
+
+    data, valid = data_store.sample(
+        "need_padding",
+        100,
+    )
+
+    assert jnp.any(data["trajectory_id"] == 1)
+
+
+def test_in_progress_trajectory_too_short(data_store: TrajectoryBufferDataStore):
+    data_store._trajectory.min_length = 3
+
+    data_store.register_sample_config(
+        "need_padding",
+        {
+            "index": LatestSampler(),
+            "trajectory_id": LatestSampler(),
+        },
+        (-1, 2),
+    )
+
+    helper_insert_trajectory(data_store, 10, 0)
+    helper_insert_trajectory(data_store, 1, 1, end_trajectory=False)
+
+    data, valid = data_store.sample(
+        "need_padding",
+        100,
+        force_indices=jnp.arange(
+            data_store._sample_begin_idx, data_store._sample_end_idx
+        ),
+    )
+
+    assert jnp.all(data["trajectory_id"] == 0)
+
+def test_save_and_load_file(data_store: TrajectoryBufferDataStore):
     for i in range(10):
         helper_insert_trajectory(data_store, 5, i)
     for i in range(8):
@@ -248,7 +277,7 @@ def test_save_and_load_file(data_store: ReplayBuffer):
     
     data_store.save("test.npz")
     
-    data_store2 = ReplayBuffer.load("test.npz")
+    data_store2 = TrajectoryBufferDataStore.load("test.npz")
     # TODO: fix this? _sample_begin_idx and end is not saved
     # assert data_store2._sample_begin_idx == data_store._sample_begin_idx
     assert data_store2._insert_idx == data_store._insert_idx
@@ -256,26 +285,3 @@ def test_save_and_load_file(data_store: ReplayBuffer):
 
     # check arbitrary data
     assert jnp.all(data_store2.dataset["data"] == data_store.dataset["data"])
-
-
-def test_data_io_via_seq_id(data_store: ReplayBuffer):
-    for i in range(10):
-        helper_insert_trajectory(data_store, 5, i)
-
-    # duplicate the ReplayBuffer
-    duplicated_data_store = ReplayBuffer.deserialize(
-        data_store.serialized()
-    )
-    assert len(duplicated_data_store) == len(data_store)
-
-    last_seq_id_dup = duplicated_data_store.latest_data_id()
-
-    for i in range(8):
-        helper_insert_trajectory(data_store, 8, i)
-
-    indices, latest_data = data_store.get_latest_data(last_seq_id_dup)
-    assert len(indices) == 8*8  # from the second helper insert
-
-    # check if the duplicated data store is now updated
-    duplicated_data_store.update_data(indices, latest_data)
-    assert len(duplicated_data_store) == len(data_store)

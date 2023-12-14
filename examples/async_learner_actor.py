@@ -13,7 +13,6 @@ import jax.numpy as jnp
 import numpy as np
 import tqdm
 from absl import app, flags
-from flax import linen as nn
 from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
 
 from jaxrl_m.agents.continuous.sac import SACAgent
@@ -22,9 +21,9 @@ from jaxrl_m.utils.timer_utils import Timer
 
 from edgeml.trainer import TrainerServer, TrainerClient, TrainerTunnel
 from edgeml.data.data_store import QueuedDataStore
+from edgeml.data.jaxrl_data_store import ReplayBufferDataStore
 
-from jaxrl_m_common import ReplayBufferDataStore
-from jaxrl_m_common import make_agent, make_trainer_config, make_wandb_logger
+from jaxrl_m_common import make_agent, make_trainer_config, make_wandb_logger, make_efficient_replay_buffer
 
 FLAGS = flags.FLAGS
 
@@ -54,8 +53,12 @@ flags.DEFINE_boolean("actor", False, "Is this a learner or a trainer.")
 flags.DEFINE_boolean("render", False, "Render the environment.")
 flags.DEFINE_string("ip", "localhost", "IP address of the learner.")
 
+# experimental with efficient replay buffer
+flags.DEFINE_boolean("use_traj_buffer", False, "Use efficient replay buffer.")
 
 def print_green(x): return print("\033[92m {}\033[00m" .format(x))
+
+def print_yellow(x): return print("\033[93m {}\033[00m" .format(x))
 
 ##############################################################################
 
@@ -120,15 +123,19 @@ def actor(agent: SACAgent, data_store, env, sampling_rng, tunnel=None):
             info = np.asarray(info)
             running_return += reward
 
-            data_store.insert(
-                dict(
-                    observations=obs,
-                    actions=actions,
-                    next_observations=next_obs,
-                    rewards=reward,
-                    masks=1.0 - done,
-                )
+            data_payload = dict(
+                observations=obs,
+                actions=actions,
+                next_observations=next_obs,
+                rewards=reward,
+                masks=1.0 - done,
             )
+
+            if FLAGS.use_traj_buffer:
+                # NOTE: end_of_trajectory is used in TrajectoryBuffer
+                data_payload["end_of_trajectory"] = done or truncated
+
+            data_store.insert(data_payload)
 
             obs = next_obs
             if done or truncated:
@@ -160,7 +167,7 @@ def actor(agent: SACAgent, data_store, env, sampling_rng, tunnel=None):
 ##############################################################################
 
 
-def learner(agent, replay_buffer, wandb_logger=None, tunnel=None):
+def learner(agent, replay_buffer, wandb_logger=None, tunnel=None, sharding=None):
     """
     The learner loop, which runs when "--learner" is set to True.
     NOTE: tunnel is used the transport layer for multi-threading
@@ -202,7 +209,15 @@ def learner(agent, replay_buffer, wandb_logger=None, tunnel=None):
     for step in tqdm.tqdm(range(FLAGS.max_steps), dynamic_ncols=True, desc="learner"):
         # Train the networks
         with timer.context("sample_replay_buffer"):
-            batch = replay_buffer.sample(FLAGS.batch_size * FLAGS.utd_ratio)
+            if FLAGS.use_traj_buffer:
+                batch, mask = replay_buffer.sample(
+                    "training", # define in the TrajectoryBuffer.register_sample_config
+                    FLAGS.batch_size,
+                )
+                # replay_buffer's batch is default in cpu, put it to devices
+                batch = jax.device_put(batch, sharding.replicate())
+            else:
+                batch = replay_buffer.sample(FLAGS.batch_size * FLAGS.utd_ratio)
 
         with timer.context("train"):
             agent, update_info = agent.update_high_utd(
@@ -249,11 +264,19 @@ def main(_):
     )
 
     def create_replay_buffer_and_wandb_logger():
-        replay_buffer = ReplayBufferDataStore(
-            env.observation_space,
-            env.action_space,
-            capacity=FLAGS.replay_buffer_capacity,
-        )
+        if FLAGS.use_traj_buffer:
+            print_yellow(f"Using experimental Efficient replay buffer")
+            replay_buffer = make_efficient_replay_buffer(
+                env.observation_space,
+                env.action_space,
+                capacity=FLAGS.replay_buffer_capacity,
+            )
+        else:
+            replay_buffer = ReplayBufferDataStore(
+                env.observation_space,
+                env.action_space,
+                capacity=FLAGS.replay_buffer_capacity,
+            )
 
         # set up wandb and logging
         wandb_logger = make_wandb_logger(
@@ -267,11 +290,11 @@ def main(_):
 
         # learner loop
         print_green("starting learner loop")
-        learner(agent, replay_buffer, wandb_logger=wandb_logger, tunnel=None)
+        learner(agent, replay_buffer, wandb_logger=wandb_logger, sharding=sharding)
 
     elif FLAGS.actor:
         sampling_rng = jax.device_put(sampling_rng, sharding.replicate())
-        data_store = QueuedDataStore(50000)  # the queue size on the actor
+        data_store = QueuedDataStore(5000)  # the queue size on the actor
 
         # actor loop
         print_green("starting actor loop")
@@ -292,7 +315,7 @@ def main(_):
         # Start learner thread
         learner_thread = threading.Thread(
             target=learner,
-            args=(agent, replay_buffer, wandb_logger, tunnel)
+            args=(agent, replay_buffer, wandb_logger, tunnel, sharding)
         )
         learner_thread.start()
 
