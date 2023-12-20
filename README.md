@@ -32,7 +32,7 @@ python3 examples/run_data_store.py
 ## then try out --server and --client mode on 2 separate terminals
 ```
 
-3. Async learner-actor with Gym RL env (requires `jaxrl_m` as dependency)
+3. Async learner-actor with Gym RL env (requires [jaxrl_m](https://github.com/rail-berkeley/jaxrl_minimal), [mujuco-py](https://github.com/openai/mujoco-py#install-mujoco) as dependency)
 
 ```bash
 # Indicate --learner or --actor mode, no tag means async multithreaded mode
@@ -108,9 +108,9 @@ model = load_model()
 agent = edgeml.ActionClient('localhost', 6379, task_id='mnist', config=agent_config)
 
 for _ in range(100):
-    observation = agent.get_observation()
+    observation = agent.obs()
     prediction = model.predict(observation)
-    agent.send_action(prediction)
+    agent.act("send", prediction)
 ```
 
 **Edge device as server**
@@ -213,6 +213,7 @@ while True:
 python3 edgeml/tests/test_action.py
 python3 edgeml/tests/test_inference.py
 python3 edgeml/tests/test_trainer.py
+python3 edgeml/tests/test_tfds.py
 
 # Run all tests
 python3 edgeml/tests/test_all.py
