@@ -101,10 +101,19 @@ class TrajectoryBuffer():
     def insert(self, data: Dict[str, jax.Array], end_of_trajectory: bool = False):
         """
         Insert a single data point into the data store.
-        # TODO: end_of_trajectory tag defined in data?
+
+        the min required data entry is:
+            data = dict(
+                observations=observation_data, # np.ndarray or dict
+                next_observations=next_observation_data, # np.ndarray or dict
+                actions=np.empty((capacity, *action_space.shape), dtype=action_space.dtype),
+                rewards=np.empty((capacity,), dtype=np.float32),
+                masks=np.empty((capacity,), dtype=bool),            # is terminal
+                end_of_trajectory=False,                            # is last
+            )
         """
         end_of_trajectory = data.get(
-            "end_of_trajectory", end_of_trajectory)  # TODO
+            "end_of_trajectory", end_of_trajectory)  # TODO: if not exist, assume False
 
         # Grab the metadata of the sample we're overwriting
         real_insert_idx = self._insert_idx % self.capacity

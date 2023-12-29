@@ -22,8 +22,9 @@ from jaxrl_m.utils.timer_utils import Timer
 from edgeml.trainer import TrainerServer, TrainerClient, TrainerTunnel
 from edgeml.data.data_store import QueuedDataStore
 from edgeml.data.jaxrl_data_store import ReplayBufferDataStore
+from edgeml.data.jaxrl_data_store import make_default_trajectory_buffer
 
-from jaxrl_m_common import make_agent, make_trainer_config, make_wandb_logger, make_efficient_replay_buffer
+from jaxrl_m_common import make_agent, make_trainer_config, make_wandb_logger
 
 FLAGS = flags.FLAGS
 
@@ -53,14 +54,22 @@ flags.DEFINE_boolean("actor", False, "Is this a learner or a trainer.")
 flags.DEFINE_boolean("render", False, "Render the environment.")
 flags.DEFINE_string("ip", "localhost", "IP address of the learner.")
 
-# experimental with efficient replay buffer
+# experimental with trajectory buffer
 flags.DEFINE_boolean("use_traj_buffer", False, "Use efficient replay buffer.")
 
+# save replaybuffer data as rlds tfrecord
+flags.DEFINE_string("rlds_log_dir", None, "Directory to log data.")
+
+
 def print_green(x): return print("\033[92m {}\033[00m" .format(x))
+
 
 def print_yellow(x): return print("\033[93m {}\033[00m" .format(x))
 
 ##############################################################################
+
+
+global_rlds_logger = None
 
 
 def actor(agent: SACAgent, data_store, env, sampling_rng, tunnel=None):
@@ -133,7 +142,7 @@ def actor(agent: SACAgent, data_store, env, sampling_rng, tunnel=None):
 
             if FLAGS.use_traj_buffer:
                 # NOTE: end_of_trajectory is used in TrajectoryBuffer
-                data_payload["end_of_trajectory"] = done or truncated
+                data_payload["end_of_trajectory"] = truncated # TODO: check if ignore None is okay
 
             data_store.insert(data_payload)
 
@@ -211,7 +220,7 @@ def learner(agent, replay_buffer, wandb_logger=None, tunnel=None, sharding=None)
         with timer.context("sample_replay_buffer"):
             if FLAGS.use_traj_buffer:
                 batch, mask = replay_buffer.sample(
-                    "training", # define in the TrajectoryBuffer.register_sample_config
+                    "training",  # define in the TrajectoryBuffer.register_sample_config
                     FLAGS.batch_size,
                 )
                 # replay_buffer's batch is default in cpu, put it to devices
@@ -235,6 +244,51 @@ def learner(agent, replay_buffer, wandb_logger=None, tunnel=None, sharding=None)
 
 ##############################################################################
 
+
+def create_datastore_and_wandb_logger(env):
+    """
+    Utility function to create replay buffer and wandb logger.
+    """
+    if FLAGS.rlds_log_dir:
+        print_yellow(f"Saving replay buffer data to {FLAGS.rlds_log_dir}")
+        # Install from: https://github.com/rail-berkeley/oxe_envlogger
+        from oxe_envlogger.rlds_logger import RLDSLogger
+
+        logger = RLDSLogger(
+            observation_space=env.observation_space,
+            action_space=env.action_space,
+            dataset_name=FLAGS.env,
+            directory=FLAGS.rlds_log_dir,
+            max_episodes_per_file=10,  # TODO: arbitrary number
+        )
+        global global_rlds_logger
+        global_rlds_logger = logger
+
+    if FLAGS.use_traj_buffer:
+        print_yellow(f"Using experimental Trajectory buffer")
+        replay_buffer = make_default_trajectory_buffer(
+            env.observation_space,
+            env.action_space,
+            capacity=FLAGS.replay_buffer_capacity,
+            rlds_logger=logger if FLAGS.rlds_log_dir else None,
+        )
+    else:
+        replay_buffer = ReplayBufferDataStore(
+            env.observation_space,
+            env.action_space,
+            capacity=FLAGS.replay_buffer_capacity,
+            rlds_logger=logger if FLAGS.rlds_log_dir else None,
+        )
+
+    # set up wandb and logging
+    wandb_logger = make_wandb_logger(
+        project="jaxrl_minimal",
+        description=FLAGS.exp_name or FLAGS.env,
+    )
+    return replay_buffer, wandb_logger
+
+
+##############################################################################
 
 def main(_):
     devices = jax.local_devices()
@@ -263,30 +317,8 @@ def main(_):
         jax.tree_map(jnp.array, agent), sharding.replicate()
     )
 
-    def create_replay_buffer_and_wandb_logger():
-        if FLAGS.use_traj_buffer:
-            print_yellow(f"Using experimental Efficient replay buffer")
-            replay_buffer = make_efficient_replay_buffer(
-                env.observation_space,
-                env.action_space,
-                capacity=FLAGS.replay_buffer_capacity,
-            )
-        else:
-            replay_buffer = ReplayBufferDataStore(
-                env.observation_space,
-                env.action_space,
-                capacity=FLAGS.replay_buffer_capacity,
-            )
-
-        # set up wandb and logging
-        wandb_logger = make_wandb_logger(
-            project="jaxrl_minimal",
-            description=FLAGS.exp_name or FLAGS.env,
-        )
-        return replay_buffer, wandb_logger
-
     if FLAGS.learner:
-        replay_buffer, wandb_logger = create_replay_buffer_and_wandb_logger()
+        replay_buffer, wandb_logger = create_datastore_and_wandb_logger(env)
 
         # learner loop
         print_green("starting learner loop")
@@ -306,7 +338,7 @@ def main(_):
         # In this example, the tunnel acts as the transport layer for the
         # trainerServer and trainerClient. Also, both actor and learner shares
         # the same replay buffer.
-        replay_buffer, wandb_logger = create_replay_buffer_and_wandb_logger()
+        replay_buffer, wandb_logger = create_datastore_and_wandb_logger(env)
 
         tunnel = TrainerTunnel()
         sampling_rng = jax.device_put(sampling_rng, sharding.replicate())
@@ -325,4 +357,12 @@ def main(_):
 
 
 if __name__ == "__main__":
-    app.run(main)
+    try:
+        app.run(main)
+    finally:
+        # NOTE: manually flush the logger when exit to prevent data loss
+        # this is required as the envlogger writer doesn't handle
+        # destruction of the object gracefully
+        if global_rlds_logger:
+            global_rlds_logger.close()
+        print_green("done exit")

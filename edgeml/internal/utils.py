@@ -50,6 +50,7 @@ def make_compression_method(compression: str) -> Tuple[Callable, Callable]:
         :return: compress, decompress functions
             def compress(object) -> bytes
             def decompress(data) -> object
+    TODO: support msgpack
     """
     if compression == 'lz4':
         def compress(data): return lz4.frame.compress(pickle.dumps(data))

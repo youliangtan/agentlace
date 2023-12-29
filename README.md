@@ -37,10 +37,19 @@ python3 examples/run_data_store.py
 ```bash
 # Indicate --learner or --actor mode, no tag means async multithreaded mode
 # provide --ip for remote connection, default is localhost
-# use --render to render the gym env
-# use --use_traj_buffer to use trajectory buffer instead of replay buffer
 python3 examples/async_learner_actor.py
 ```
+
+**More option flags**:
+ - `--env`: gym env name, default is `HalfCheetah-v4`
+ - `--learner`: run learner mode
+ - `--actor`: run actor mode
+ - `--ip`: ip address of the remote server
+ - `--render`: render the gym env
+ - `--use_traj_buffer`: use trajectory buffer instead of replay buffer
+ - `--rlds_log_dir`: directory to save the tfrecords for [RLDS](https://github.com/google-research/rlds)
+
+NOTE: rlds logger requires installation of [oxe_envlogger](https://github.com/rail-berkeley/oxe_envlogger)
 
 ---
 
