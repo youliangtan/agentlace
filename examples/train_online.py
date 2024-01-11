@@ -14,8 +14,8 @@ from gym.wrappers.record_episode_statistics import RecordEpisodeStatistics
 from jaxrl_m.agents.continuous.sac import SACAgent
 from jaxrl_m.common.evaluation import evaluate
 
-from edgeml.data.trajectory_buffer import TrajectoryBuffer, DataShape
-from edgeml.data.sampler import LatestSampler, SequenceSampler
+from agentlace.data.trajectory_buffer import TrajectoryBuffer, DataShape
+from agentlace.data.sampler import LatestSampler, SequenceSampler
 
 from jaxrl_m.utils.timer_utils import Timer
 from jaxrl_m_common import make_agent, make_wandb_logger
@@ -59,7 +59,7 @@ def main(_):
 
     # set up wandb and logging
     wandb_logger = make_wandb_logger(
-        project="jaxrl_minimal_edgeml",
+        project="jaxrl_minimal_agentlace",
         description=FLAGS.exp_name or FLAGS.env
     )
 

@@ -9,14 +9,14 @@ from typing import Optional
 from jaxrl_m.agents.continuous.sac import SACAgent
 from jaxrl_m.common.wandb import WandBLogger
 
-from edgeml.trainer import TrainerConfig
-from edgeml.data.trajectory_buffer import DataShape
-from edgeml.data.jaxrl_data_store import TrajectoryBufferDataStore
-from edgeml.data.sampler import LatestSampler, SequenceSampler
+from agentlace.trainer import TrainerConfig
+from agentlace.data.trajectory_buffer import DataShape
+from agentlace.data.jaxrl_data_store import TrajectoryBufferDataStore
+from agentlace.data.sampler import LatestSampler, SequenceSampler
 
 from jaxrl_m.common.wandb import WandBLogger
 from jaxrl_m.agents.continuous.sac import SACAgent
-from edgeml.trainer import TrainerConfig
+from agentlace.trainer import TrainerConfig
 
 from jax import nn
 from oxe_envlogger.rlds_logger import RLDSLogger
@@ -61,7 +61,7 @@ def make_trainer_config():
 
 
 def make_wandb_logger(
-    project: str = "edgeml",
+    project: str = "agentlace",
     description: str = "jaxrl_m",
 ):
     wandb_config = WandBLogger.get_default_config()

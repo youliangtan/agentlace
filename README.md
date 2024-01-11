@@ -1,6 +1,8 @@
-# edgeml
+# Agentlace
 
-A simple framework for distributed machine learning applications with edge devices. Given the limitations of GPU compute for many edge devices, EdgeML facilitates a distributed data stream between edge devices and a remote GPU server. Built on a client-server architecture, EdgeML efficiently manages the transport layer for multiple clients and a central server. Moreover, Edgeml also enables async operations and inter-processes communications between different processes on a single machine.
+![Agentlace Logo](./docs/agentlace_logo.png "Agentlace Logo")
+
+A simple framework for distributed machine learning applications to connect agents. Given the limitations of GPU compute for many edge devices, Agentlace facilitates a distributed data stream between edge devices and a remote GPU server. Built on a client-server architecture, Agentlace efficiently manages the transport layer for multiple clients and a central server. Moreover, Agentlace also enables async operations and inter-processes communications between different processes on a single machine.
 
 ## Installation
 
@@ -57,7 +59,7 @@ NOTE: rlds logger requires installation of [oxe_envlogger](https://github.com/ra
 
 There are three types of server-client main types of classes for user to use, according to their application. Functional programming is mainly used as the API design. User can define their own callback function to process the data. There are 3 primary modes: `action`, `inference`, `trainer`.
 
-1. **Action service (edge device) as server: `edgeml.ActionServer` and `edgeml.ActionClient`**
+1. **Action service (edge device) as server: `agentlace.ActionServer` and `agentlace.ActionClient`**
    - `ActionServer` provides observation to client
    - `ActionClient` can provide further action to server (Optional)
 
@@ -72,7 +74,7 @@ A -- "act()" --> B
 B -- "publish_obs()" --> A
 ```
 
-1. **Inference compute as server: `edgeml.InferenceServer` and `edgeml.InferenceClient`**
+1. **Inference compute as server: `agentlace.InferenceServer` and `agentlace.InferenceClient`**
    - `InferenceClient` provides observation to server and gets prediction
 
 *Multi-client to call inference compute. client can call the `call` method*
@@ -83,7 +85,7 @@ A[Client 1] -- "call()" --> B((Inference Server))
 C[Client 2] -- "call()" --> B
 ```
 
-3. **Trainer compute as server: `edgeml.TrainerServer` and `edgeml.TrainerClient`**
+3. **Trainer compute as server: `agentlace.TrainerServer` and `agentlace.TrainerClient`**
    - `TrainerClient` provides consistent datastore update to server and gets new network
 
 This supports distributed datastore, and enable multiple clients to send data to server. The server can then publish the new network to all clients.
@@ -105,16 +107,16 @@ G <--> B
 
 ## Example Usage
 
-> For more examples, please refer to the test scripts in `edgeml/tests/` and `examples`.
+> For more examples, please refer to the test scripts in `agentlace/tests/` and `examples`.
 
 1. **A RL Env as Action Server**
 
-The environment can send observations to a remote client. The client, in turn, can provide actions to the environment server. This uses the `edgeml.ActionServer` and `edgeml.ActionClient` classes.
+The environment can send observations to a remote client. The client, in turn, can provide actions to the environment server. This uses the `agentlace.ActionServer` and `agentlace.ActionClient` classes.
 
 **GPU Compute as client**
 ```py
 model = load_model()
-agent = edgeml.ActionClient('localhost', 6379, task_id='mnist', config=agent_config)
+agent = agentlace.ActionClient('localhost', 6379, task_id='mnist', config=agent_config)
 
 for _ in range(100):
     observation = agent.obs()
@@ -132,14 +134,14 @@ def observation_callback(keys):
     # TODO: return the desired observations here
     return {"cam1": "some_value"}
 
-config = edgeml.ActionConfig(port_number=6379, action_keys=['move'], observation_keys=['cam1'])
-agent_server = edgeml.ActionServer(config, observation_callback, action_callback)
+config = agentlace.ActionConfig(port_number=6379, action_keys=['move'], observation_keys=['cam1'])
+agent_server = agentlace.ActionServer(config, observation_callback, action_callback)
 agent_server.start()
 ```
 
 2. **Agent as client and inference as server**
 
-This uses the `edgeml.InferenceServer` and `edgeml.InferenceClient` classes. This is useful for low power edge devices that cannot run inference locally.
+This uses the `agentlace.InferenceServer` and `agentlace.InferenceClient` classes. This is useful for low power edge devices that cannot run inference locally.
 
 **Inference server**
 ```py
@@ -147,7 +149,7 @@ def predict(payload):
     # TODO: do some prediction based on payload
     return {"prediction": "some_value"}
 
-inference_server = edgeml.InferenceServer(port_num=6379)
+inference_server = agentlace.InferenceServer(port_num=6379)
 inference_server.register_interface("voice_reg", predict)
 inference_server.register_interface("face_reg", predict)
 inference_server.start()
@@ -155,13 +157,13 @@ inference_server.start()
 
 **Client**
 ```py
-client = edgeml.InferenceClient('localhost', 6379)
+client = agentlace.InferenceClient('localhost', 6379)
 res = client.call("voice_reg", {"audio": "serialized_audio"})
 ```
 
 3. **Remote Training Example for an RL Application**
 
-A remote trainer can access the datastore updated by edge devices (Agents) and sends updated network back. The Agent then updates its model with these new network. This uses the `edgeml.TrainerServer` and `edgeml.TrainerClient` classes.
+A remote trainer can access the datastore updated by edge devices (Agents) and sends updated network back. The Agent then updates its model with these new network. This uses the `agentlace.TrainerServer` and `agentlace.TrainerClient` classes.
 
 
 **Client**
@@ -171,8 +173,8 @@ env = gym.make('CartPole-v0')
 observation = env.reset()
 
 # create data store and register to trainer client
-data_store = edgeml.data.ReplayBuffer(capacity=2)
-trainer_client = edgeml.TrainerClient(
+data_store = agentlace.data.ReplayBuffer(capacity=2)
+trainer_client = agentlace.TrainerClient(
     "agent1", 'localhost', TrainerConfig(), data_store)
 
 agent = make_agent()  # Arbitrary RL agent
@@ -197,10 +199,10 @@ while True:
 **Trainer (Remote compute)**
 
 ```py
-trainer_server = edgeml.TrainerServer(edgeml.TrainerConfig())
+trainer_server = agentlace.TrainerServer(agentlace.TrainerConfig())
 
 # create datastore in server
-data_store = edgeml.data.ReplayBuffer(capacity=2)
+data_store = agentlace.data.ReplayBuffer(capacity=2)
 trainer_server.register_data_store("agent1", data_store)
 
 trainer_server.start(threaded=True)
@@ -219,16 +221,16 @@ while True:
 - Run test cases to make sure everything is working as expected.
 
 ```bash
-python3 edgeml/tests/test_action.py
-python3 edgeml/tests/test_inference.py
-python3 edgeml/tests/test_trainer.py
-python3 edgeml/tests/test_tfds.py
+python3 agentlace/tests/test_action.py
+python3 agentlace/tests/test_inference.py
+python3 agentlace/tests/test_trainer.py
+python3 agentlace/tests/test_tfds.py
 
 # Run all tests
-python3 edgeml/tests/test_all.py
+python3 agentlace/tests/test_all.py
 
 # Run specific test
-pytest-3 edgeml/tests/test_data_store.py
+pytest-3 agentlace/tests/test_data_store.py
 ```
 
 - The current implementation mainly uses zeromq as communication protocol, it should be easy to extend it to support other protocols such as grpc. (TODO: impl abstract function when there is a need)

@@ -1,11 +1,11 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='edgeml',
+    name='agentlace',
     version='0.1.2',
     packages=find_packages(),
     description='library to enable distributed edge ml training and inference',
-    url='https://github.com/youliangtan/edgeml',
+    url='https://github.com/youliangtan/agentlace',
     author='auth',
     author_email='tan_you_liang@hotmail.com',
     license='MIT',

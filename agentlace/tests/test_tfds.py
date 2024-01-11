@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-from edgeml.data.tfds import make_datastore
-from edgeml.data.jaxrl_data_store import ReplayBufferDataStore
-from edgeml.data.jaxrl_data_store import make_default_trajectory_buffer
+from agentlace.data.tfds import make_datastore
+from agentlace.data.jaxrl_data_store import ReplayBufferDataStore
+from agentlace.data.jaxrl_data_store import make_default_trajectory_buffer
 
 from oxe_envlogger.rlds_logger import RLDSLogger
 

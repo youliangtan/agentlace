@@ -26,8 +26,8 @@ jobs:
         pip install flake8 pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         
-    # Install the current repo (edgeml)
-    - name: Install edgeml
+    # Install the current repo (agentlace)
+    - name: Install agentlace
       run: |
         pip install -e .
 
@@ -41,5 +41,5 @@ jobs:
     # Run the specified tests
     - name: Test with pytest
       run: |
-        python3 edgeml/tests/test_all.py
-      # pytest edgeml/tests/test_replay_buffer.py # minimal install doesn't require jax
+        python3 agentlace/tests/test_all.py
+      # pytest agentlace/tests/test_replay_buffer.py # minimal install doesn't require jax

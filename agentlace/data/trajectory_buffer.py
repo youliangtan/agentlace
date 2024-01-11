@@ -7,8 +7,8 @@ from dataclasses import dataclass, asdict
 
 from typing import Any, Dict, Optional, Tuple, List
 
-from edgeml.data.data_store import DataStoreBase
-from edgeml.data.sampler import make_jit_insert, make_jit_sample, Sampler
+from agentlace.data.data_store import DataStoreBase
+from agentlace.data.sampler import make_jit_insert, make_jit_sample, Sampler
 
 
 DATA_PREFIX = "data/"

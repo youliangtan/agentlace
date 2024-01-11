@@ -3,9 +3,9 @@
 import pytest
 import jax
 import jax.numpy as jnp
-from edgeml.data.trajectory_buffer import DataShape
-from edgeml.data.jaxrl_data_store import TrajectoryBufferDataStore
-from edgeml.data.sampler import LatestSampler, SequenceSampler
+from agentlace.data.trajectory_buffer import DataShape
+from agentlace.data.jaxrl_data_store import TrajectoryBufferDataStore
+from agentlace.data.sampler import LatestSampler, SequenceSampler
 import random
 
 

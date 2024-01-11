@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
 import random
-from edgeml.data.trajectory_buffer import DataShape
-from edgeml.data.jaxrl_data_store import TrajectoryBufferDataStore
+from agentlace.data.trajectory_buffer import DataShape
+from agentlace.data.jaxrl_data_store import TrajectoryBufferDataStore
 
-from edgeml.data.sampler import LatestSampler
-from edgeml.data.data_store import QueuedDataStore
-from edgeml.trainer import TrainerClient, TrainerServer, TrainerConfig
+from agentlace.data.sampler import LatestSampler
+from agentlace.data.data_store import QueuedDataStore
+from agentlace.trainer import TrainerClient, TrainerServer, TrainerConfig
 import argparse
 import time
 import logging

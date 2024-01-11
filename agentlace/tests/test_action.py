@@ -3,11 +3,11 @@
 import cv2
 import time
 import logging
-from edgeml.action import ActionClient, ActionServer, ActionConfig
+from agentlace.action import ActionClient, ActionServer, ActionConfig
 
 def test_action():
     # 1. Read the image using OpenCV
-    img = cv2.imread("edgeml/tests/test_image.png")
+    img = cv2.imread("agentlace/tests/test_image.png")
 
     # Define callback functions for the server
     def obs_callback(keys: set) -> dict:

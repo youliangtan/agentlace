@@ -6,7 +6,7 @@ from typing import Optional, Dict
 from typing_extensions import Protocol
 import logging
 
-from edgeml.internal.utils import make_compression_method
+from agentlace.internal.utils import make_compression_method
 from threading import Lock
 
 ##############################################################################

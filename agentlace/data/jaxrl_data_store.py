@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from threading import Lock
 from typing import List, Optional
-from edgeml.data.data_store import DataStoreBase
-from edgeml.data.trajectory_buffer import TrajectoryBuffer, DataShape
-from edgeml.data.sampler import LatestSampler, SequenceSampler
+from agentlace.data.data_store import DataStoreBase
+from agentlace.data.trajectory_buffer import TrajectoryBuffer, DataShape
+from agentlace.data.sampler import LatestSampler, SequenceSampler
 
 import gym
 import jax
