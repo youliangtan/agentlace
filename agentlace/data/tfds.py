@@ -5,8 +5,8 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
-from edgeml.data.jaxrl_data_store import ReplayBufferDataStore
-from edgeml.data.jaxrl_data_store import make_default_trajectory_buffer
+from agentlace.data.jaxrl_data_store import ReplayBufferDataStore
+from agentlace.data.jaxrl_data_store import make_default_trajectory_buffer
 
 ##############################################################################
 

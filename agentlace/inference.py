@@ -3,8 +3,8 @@
 from __future__ import annotations
 from typing import Optional, Callable, Set, Dict, List
 
-from edgeml.zmq_wrapper.req_rep import ReqRepServer, ReqRepClient
-from edgeml.internal.utils import compute_hash
+from agentlace.zmq_wrapper.req_rep import ReqRepServer, ReqRepClient
+from agentlace.internal.utils import compute_hash
 
 import threading
 

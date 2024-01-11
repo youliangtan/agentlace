@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from edgeml.inference import InferenceClient, InferenceServer
+from agentlace.inference import InferenceClient, InferenceServer
 
 def test_inference():
     # Test functions for server interfaces

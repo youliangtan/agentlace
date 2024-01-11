@@ -2,8 +2,8 @@
 
 import time
 import logging
-from edgeml.trainer import TrainerClient, TrainerServer, TrainerConfig
-from edgeml.data.data_store import QueuedDataStore, DataStoreBase
+from agentlace.trainer import TrainerClient, TrainerServer, TrainerConfig
+from agentlace.data.data_store import QueuedDataStore, DataStoreBase
 
 import numpy as np
 from typing import Any
@@ -30,8 +30,8 @@ def request_callback(type: str, payload: Any) -> dict:
 def helper_create_data_store(capacity) -> DataStoreBase:
     """Helper function to create a data store."""
     if IS_REPLAY_BUFFER:
-        from edgeml.data.trajectory_buffer import DataShape
-        from edgeml.data.jaxrl_data_store import TrajectoryBufferDataStore
+        from agentlace.data.trajectory_buffer import DataShape
+        from agentlace.data.jaxrl_data_store import TrajectoryBufferDataStore
         ds = TrajectoryBufferDataStore(
             capacity=capacity,
             data_shapes=[DataShape(name="index", shape=(3,), dtype="int32")]

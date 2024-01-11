@@ -19,10 +19,10 @@ from jaxrl_m.agents.continuous.sac import SACAgent
 from jaxrl_m.common.evaluation import evaluate
 from jaxrl_m.utils.timer_utils import Timer
 
-from edgeml.trainer import TrainerServer, TrainerClient, TrainerTunnel
-from edgeml.data.data_store import QueuedDataStore
-from edgeml.data.jaxrl_data_store import ReplayBufferDataStore
-from edgeml.data.jaxrl_data_store import make_default_trajectory_buffer
+from agentlace.trainer import TrainerServer, TrainerClient, TrainerTunnel
+from agentlace.data.data_store import QueuedDataStore
+from agentlace.data.jaxrl_data_store import ReplayBufferDataStore
+from agentlace.data.jaxrl_data_store import make_default_trajectory_buffer
 
 from jaxrl_m_common import make_agent, make_trainer_config, make_wandb_logger
 

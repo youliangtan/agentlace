@@ -5,9 +5,9 @@ from typing import Optional, Callable, Set, Dict, List
 from typing_extensions import Protocol
 from collections import deque
 
-from edgeml.zmq_wrapper.req_rep import ReqRepServer, ReqRepClient
-from edgeml.zmq_wrapper.broadcast import BroadcastServer, BroadcastClient
-from edgeml.internal.utils import compute_hash
+from agentlace.zmq_wrapper.req_rep import ReqRepServer, ReqRepClient
+from agentlace.zmq_wrapper.broadcast import BroadcastServer, BroadcastClient
+from agentlace.internal.utils import compute_hash
 
 import threading
 import logging

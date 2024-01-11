@@ -5,7 +5,7 @@ import zmq
 import argparse
 import logging
 import threading
-from edgeml.internal.utils import make_compression_method
+from agentlace.internal.utils import make_compression_method
 
 ##############################################################################
 

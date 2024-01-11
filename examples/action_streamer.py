@@ -4,8 +4,8 @@
 # the client requesting for the image, and displaying it
 
 import argparse
-from edgeml.action import ActionClient, ActionServer, ActionConfig
-from edgeml.internal.utils import mat_to_jpeg, jpeg_to_mat
+from agentlace.action import ActionClient, ActionServer, ActionConfig
+from agentlace.internal.utils import mat_to_jpeg, jpeg_to_mat
 import cv2
 import time
 
@@ -22,7 +22,7 @@ def obs_callback(keys: set) -> dict:
     this reads the image from the webcam and send it to the client
     """
     print("Observation requested from client: ", keys)
-    # img = cv2.imread("edgeml/tests/test_image.png")
+    # img = cv2.imread("agentlace/tests/test_image.png")
     ret, img = cap.read()
 
     if not ret:
