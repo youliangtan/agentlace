@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 
-import numpy as np
+import numpy
+from typing import Any, Dict, Tuple, Optional, Union
 
 # check if jax is installed
 try:
     import jax
-    import jax.numpy as np
+    import jax.numpy
     import chex
+    Array = Union[jax.Array, numpy.ndarray]
 except ImportError:
     print("JAX is not installed, revert back to numpy")
+    Array = numpy.ndarray
 
 
-from typing import Dict, Tuple, Optional
 from enum import IntEnum
 
 
@@ -22,16 +24,24 @@ class Sampler:
     """Abstract base class for samplers."""
 
     source = None  # default source name
+    _np = numpy
+    _use_jax: bool = False
+
+    def __init__(self, source=None, use_jax=False):
+        self.source = source
+        self._use_jax = use_jax
+        if use_jax:
+            self._np = jax.numpy
 
     def sample(
         self,
-        sampled_idx: np.ndarray,
-        ep_begin: np.ndarray,
-        ep_end: np.ndarray,
-        key: np.ndarray,
-        dataset: Dict[str, np.ndarray],
+        sampled_idx: Array,
+        ep_begin: Array,
+        ep_end: Array,
+        key: Union[Array, numpy.random.Generator],
+        dataset: Dict[str, Array],
         source_name: str,
-    ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+    ) -> Tuple[Dict[str, Array], Dict[str, Array]]:
         """
         Sample from the data according to the config.
 
@@ -43,7 +53,7 @@ class Sampler:
         """
         raise NotImplementedError
 
-    def _access(self, idx: np.ndarray, ep_begin, ep_end, dataset, source_name):
+    def _access(self, idx: Array, ep_begin, ep_end, dataset, source_name):
         # check if source is defined, and if the source name is in dataset
         # else use the default source name which is ownself
         # TODO: better and clearner implementation for indexing
@@ -60,7 +70,7 @@ class Sampler:
         mask_ep_end = expand_to_shape(ep_end, idx.shape)
 
         data = dataset[source_name][
-            np.clip(idx, mask_ep_begin, mask_ep_end) % dataset_size
+            self._np.clip(idx, mask_ep_begin, mask_ep_end) % dataset_size
         ]
         return data, (idx >= mask_ep_begin) & (idx < mask_ep_end)
 
@@ -87,7 +97,7 @@ class SequenceSampler(Sampler):
         sequence_len = self.seq_end - self.seq_begin
         assert sequence_len > 0, f"History length must be positive, got {sequence_len}"
         indices = (
-            np.arange(self.seq_begin, self.seq_end)[None, :] + sampled_idx[:, None]
+            self._np.arange(self.seq_begin, self.seq_end)[None, :] + sampled_idx[:, None]
         )
         batch_size = sampled_idx.shape[0]
         chex.assert_shape(indices, (batch_size, sequence_len))
@@ -96,7 +106,7 @@ class SequenceSampler(Sampler):
             assert (
                 sequence_len == 1
             ), f"Can only squeeze sequence if length is 1, but got {sequence_len}"
-            indices = np.squeeze(indices, axis=-1)
+            indices = self._np.squeeze(indices, axis=-1)
 
         return self._access(indices, ep_begin, ep_end, dataset, source_name)
 
@@ -131,27 +141,46 @@ class FutureSampler(Sampler):
             if max_future_length is None:
                 max_future = ep_end
             else:
-                max_future = np.minimum(ep_end, sampled_idx + max_future_length)
+                max_future = self._np.minimum(ep_end, sampled_idx + max_future_length)
 
-            future_indices = jax.random.randint(
-                key, shape=sampled_idx.shape, minval=sampled_idx, maxval=max_future
-            )
+            if self._use_jax:
+                future_indices = jax.random.randint(
+                    key, shape=sampled_idx.shape, minval=sampled_idx, maxval=max_future
+                )
+            else:
+                key: numpy.random.Generator
+                future_indices = key.uniform(low=sampled_idx, high=max_future, size=sampled_idx.shape).astype(int)
 
         elif self.distribution == self.Distribution.EXPONENTIAL:
-            offset = jax.random.exponential(key, shape=sampled_idx.shape) * self.lambda_
+            if self._use_jax:
+                offset = jax.random.exponential(key, shape=sampled_idx.shape) * self.lambda_
+            else:
+                key: numpy.random.Generator
+                offset = key.exponential(size=sampled_idx.shape) * self.lambda_
+
+            chex.assert_equal_shape([offset, sampled_idx])
             future_indices = offset.astype(int) + sampled_idx
-            future_indices = np.minimum(future_indices, ep_end - 1)
+            future_indices = self._np.minimum(future_indices, ep_end - 1)
         else:
             raise ValueError(f"Unknown distribution")
 
-        return self._access(future_indices, ep_begin, ep_end, dataset, source_name)
+        data, mask = self._access(
+            future_indices, ep_begin, ep_end, dataset, source_name
+        )
+        return (
+            {
+                "data": data,
+                "offset": future_indices - sampled_idx,
+            },
+            {"data": mask, "offset": mask},
+        )
 
 
 ##############################################################################
 
 
 class PrioritySampler(Sampler):
-    def __init__(self, priorities: np.ndarray, alpha=1.0, source=None):
+    def __init__(self, priorities: Array, alpha=1.0, source=None):
         """
         Initializes the PrioritySampler with given priorities.
         # TODO complete this
@@ -172,8 +201,8 @@ class PrioritySampler(Sampler):
 
     def _update_probs(self):
         """Updates the sampling probabilities based on the priorities."""
-        probs = np.power(self.priorities, self.alpha)
-        self.probs = probs / np.sum(probs)
+        probs = self._np.power(self.priorities, self.alpha)
+        self.probs = probs / self._np.sum(probs)
 
     def sample(self, sampled_idx, ep_begin, ep_end, key, dataset, source_name):
         indices = jax.random.choice(
@@ -196,7 +225,7 @@ class PrioritySampler(Sampler):
 ##############################################################################
 
 
-def expand_to_shape(x: np.ndarray, shape: Tuple[int, ...]) -> np.ndarray:
+def expand_to_shape(x: Array, shape: Tuple[int, ...]) -> Array:
     """
     Expand an array with correct prefix dimensions to a given shape.
     """
@@ -211,46 +240,61 @@ def expand_to_shape(x: np.ndarray, shape: Tuple[int, ...]) -> np.ndarray:
 
 def make_jit_sample(
     sample_config: dict,
-    device: jax.Device,
     sample_range: Tuple[int, int],
     capacity: int,
+    device: jax.Device = None,
+    use_jax: bool = False,
 ):
     """
     Make a JIT-compiled sample function for a dataset, according to the config.
     """
 
+    _np = numpy
+    if use_jax:
+        _np=jax.numpy
+
     def _sample_impl(
-        dataset: jax.Array,
-        metadata: Dict[str, jax.Array],
-        rng: jax.Array,
+        dataset: Array,
+        metadata: Dict[str, Array],
+        rng: Union[Array, numpy.random.Generator],
         batch_size: int,
         sample_begin_idx: int,
         sample_end_idx: int,
-        sampled_idcs: Optional[jax.Array] = None,
-    ) -> Tuple[Dict[str, jax.Array], Dict[str, jax.Array]]:
-        indices_key, *sampling_keys = jax.random.split(
-            rng, len(sample_config.keys()) + 1
-        )
-        sampling_keys = {k: v for k, v in zip(sample_config.keys(), sampling_keys)}
+        sampled_idcs: Optional[Array] = None,
+    ) -> Tuple[Dict[str, Array], Dict[str, Array]]:
 
         if sampled_idcs is None:
-            sampled_idcs = jax.random.randint(
-                indices_key,
-                shape=(batch_size,),
-                minval=sample_begin_idx,
-                maxval=sample_end_idx,
-                dtype=np.int32,
-            )
+            if use_jax:
+                indices_key, *sampling_keys = jax.random.split(
+                    rng, len(sample_config.keys()) + 1
+                )
+                sampling_keys = {k: v for k, v in zip(sample_config.keys(), sampling_keys)}
 
-        sampled_idcs = sampled_idcs
+                sampled_idcs = jax.random.randint(
+                    indices_key,
+                    shape=(batch_size,),
+                    minval=sample_begin_idx,
+                    maxval=sample_end_idx,
+                    dtype=_np.int32,
+                )
+            else:
+                rng: numpy.random.Generator
+                sampled_idcs = rng.uniform(
+                    low=sample_begin_idx,
+                    high=sample_end_idx,
+                    size=(batch_size,),
+                ).astype(_np.int32)
+
         sampled_idcs_real = sampled_idcs % capacity
-        ep_begins = np.maximum(metadata["ep_begin"][sampled_idcs_real], sample_begin_idx)
-        ep_ends = np.where(
+        ep_begins = _np.maximum(
+            metadata["ep_begin"][sampled_idcs_real], sample_begin_idx
+        )
+        ep_ends = _np.where(
             metadata["ep_end"][sampled_idcs_real] == -1,
             sample_end_idx,
-            np.minimum(metadata["ep_end"][sampled_idcs_real], sample_end_idx),
+            _np.minimum(metadata["ep_end"][sampled_idcs_real], sample_end_idx),
         )
-        sampled_idcs = np.clip(
+        sampled_idcs = _np.clip(
             sampled_idcs, ep_begins - sample_range[0], ep_ends - sample_range[1]
         )
 
@@ -261,7 +305,7 @@ def make_jit_sample(
                 dataset=dataset,
                 ep_begin=ep_begins,
                 ep_end=ep_ends,
-                key=sampling_keys[k],
+                key=sampling_keys[k] if use_jax else rng,
             )
             for k, sampler in sample_config.items()
         }
@@ -271,25 +315,47 @@ def make_jit_sample(
 
         return sampled_data, samples_valid
 
-    return jax.jit(_sample_impl, static_argnames=("batch_size",), device=device)
+    if use_jax:
+        return jax.jit(_sample_impl, static_argnames=("batch_size",), device=device)
+    else:
+        return _sample_impl
 
 
-def make_jit_insert(device: jax.Device):
+def make_jit_insert(device: jax.Device = None, use_jax: bool = False):
     """
     Make a JIT-compiled insert function for a dataset.
     """
 
     def _insert_tree_impl(
-        dataset: Dict[str, jax.Array], data: Dict[str, jax.Array], insert_idx: int
-    ) -> Dict[str, jax.Array]:
+        dataset: Dict[str, Array], data: Dict[str, Array], insert_idx: int
+    ) -> Dict[str, Array]:
         """
         Insert the new data into the dataset at the specified index, return the new dataset.
         """
-        # Check should never run after JIT
-        return jax.tree_map(
-            lambda k_dataset, k_data: k_dataset.at[insert_idx].set(k_data),
-            dataset,
-            data,
+        assert dataset.keys() == data.keys(), (
+            f"Dataset has keys: {dataset.keys()}, but data has keys: {data.keys()}."
+            f"Difference is {set(dataset.keys()) - set(data.keys())} (not in data) "
+            f"and {set(data.keys()) - set(dataset.keys())} (not in dataset)"
         )
 
-    return jax.jit(_insert_tree_impl, donate_argnums=(0,), device=device)
+        # Check should never run after JIT
+        if use_jax:
+            return jax.tree_map(
+                lambda k_dataset, k_data: k_dataset.at[insert_idx].set(k_data),
+                dataset,
+                data,
+            )
+        else:
+            def _set(_dataset, _data):
+                _dataset[insert_idx] = _data
+            jax.tree_map(
+                _set,
+                dataset,
+                data,
+            )
+            return dataset
+
+    if use_jax:
+        return jax.jit(_insert_tree_impl, donate_argnums=(0,), device=device)
+    else:
+        return _insert_tree_impl

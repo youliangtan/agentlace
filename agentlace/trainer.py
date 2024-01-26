@@ -128,7 +128,7 @@ class TrainerServer:
             :param threaded: Whether to start the server in a separate thread
         """
         if threaded:
-            self.thread = threading.Thread(target=self.req_rep_server.run)
+            self.thread = threading.Thread(target=self.req_rep_server.run, daemon=True)
             self.thread.start()
         else:
             self.req_rep_server.run()
@@ -265,7 +265,7 @@ class TrainerClient:
         self.stop_update_flag = threading.Event()
         if self.update_thread is None or not self.update_thread.is_alive():
             self.stop_update_flag.clear()
-            self.update_thread = threading.Thread(target=_periodic_update)
+            self.update_thread = threading.Thread(target=_periodic_update, daemon=True)
             self.update_thread.start()
 
     def stop(self):
