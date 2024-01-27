@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 
-import jax
-import jax.numpy as jnp
 import numpy as np
+
+try:
+    import jax
+    import jax.numpy
+except ImportError:
+    print("jax is not installed, install it if required")
+
 from dataclasses import dataclass, asdict
 
 from typing import Any, Dict, Optional, Tuple, List
@@ -22,7 +27,7 @@ class DataShape:
     dtype: str = "float32"
 
 
-class TrajectoryBuffer():
+class TrajectoryBuffer:
     """
     An in-memory data store for storing and sampling data
     from a (typically trajectory) dataset.
@@ -32,9 +37,10 @@ class TrajectoryBuffer():
         self,
         capacity: int,
         data_shapes: List[DataShape],
-        device: Optional[jax.Device] = None,
         seed: int = 0,
         min_trajectory_length: int = 2,
+        device: Optional[jax.Device] = None,
+        use_jax: bool = False,
     ):
         """
         Args:
@@ -45,24 +51,32 @@ class TrajectoryBuffer():
             min_trajectory_length: the minimum length of a trajectory to store
         """
 
-        if device is None:
+        if device is None and use_jax:
             device = jax.devices("cpu")[0]
+
+        _np = jax.numpy if use_jax else np
+
+        self._np = _np
+        self._use_jax = use_jax
 
         # Do it on CPU
         self.dataset = {
-            _ds.name: jax.device_put(
-                jnp.zeros((capacity, *_ds.shape), dtype=_ds.dtype), device
-            )
+            _ds.name: _np.zeros((capacity, *_ds.shape), dtype=_ds.dtype)
             for _ds in data_shapes
         }
-        self._sample_rng = jax.random.PRNGKey(seed=seed)
+
+        if self._use_jax:
+            self._sample_rng = jax.random.PRNGKey(seed=seed)
+            self.dataset = jax.device_put(self.dataset, device)
+        else:
+            self._sample_rng = np.random.Generator(np.random.PCG64(seed=seed))
 
         self.metadata = {
-            "ep_begin": np.zeros((capacity,), dtype=jnp.int32),
-            "ep_end": np.full((capacity,), -1, dtype=jnp.int32),
-            "trajectory_begin_flag": np.zeros((capacity,), dtype=jnp.bool_),
-            "trajectory_id": np.full((capacity,), -1, dtype=jnp.int32),
-            "seq_id": np.full((capacity,), -1, dtype=jnp.int32),
+            "ep_begin": np.zeros((capacity,), dtype=_np.int32),
+            "ep_end": np.full((capacity,), -1, dtype=_np.int32),
+            "trajectory_begin_flag": np.zeros((capacity,), dtype=_np.bool_),
+            "trajectory_id": np.full((capacity,), -1, dtype=_np.int32),
+            "seq_id": np.full((capacity,), -1, dtype=_np.int32),
         }
 
         DataStoreBase.__init__(self, capacity)
@@ -76,7 +90,7 @@ class TrajectoryBuffer():
         self._insert_idx = 0
         self._device = device
 
-        self._insert_impl = make_jit_insert(device)
+        self._insert_impl = make_jit_insert(device=device, use_jax=use_jax)
         self._sample_impls = {}
 
     def register_sample_config(
@@ -93,8 +107,13 @@ class TrajectoryBuffer():
             sample_range[1] - sample_range[0] <= self._trajectory.min_length
         ), f"Sample range {sample_range} must be <= the minimum trajectory length {self._trajectory.min_length}"
         self._sample_impls[name] = (
-            make_jit_sample(samplers, self._device,
-                            sample_range, self.capacity),
+            make_jit_sample(
+                samplers,
+                sample_range,
+                self.capacity,
+                device=self._device,
+                use_jax=self._use_jax,
+            ),
             transform,
         )
 
@@ -112,8 +131,9 @@ class TrajectoryBuffer():
                 end_of_trajectory=False,                            # is last
             )
         """
-        end_of_trajectory = data.get(
-            "end_of_trajectory", end_of_trajectory)  # TODO: if not exist, assume False
+        end_of_trajectory = data.pop(
+            "end_of_trajectory", end_of_trajectory
+        )  # TODO: if not exist, assume False
 
         # Grab the metadata of the sample we're overwriting
         real_insert_idx = self._insert_idx % self.capacity
@@ -162,8 +182,7 @@ class TrajectoryBuffer():
         else:
             # This trajectory is long enough. Mark it as valid.
             self.metadata["ep_end"][
-                np.arange(self._trajectory.begin_idx,
-                          self._insert_idx) % self.capacity
+                np.arange(self._trajectory.begin_idx, self._insert_idx) % self.capacity
             ] = self._insert_idx
 
             # Update the metadata for the next trajectory
@@ -192,7 +211,11 @@ class TrajectoryBuffer():
         if sampler_name not in self._sample_impls:
             raise ValueError(f"Sampler {sampler_name} not registered")
 
-        rng, key = jax.random.split(self._sample_rng)
+        if self._use_jax:
+            rng, key = jax.random.split(self._sample_rng)
+        else:
+            rng, key = self._sample_rng, self._sample_rng
+
         sample_impl, transform = self._sample_impls[sampler_name]
         sampled_data, mask = sample_impl(
             dataset=self.dataset,
@@ -239,15 +262,17 @@ class TrajectoryBuffer():
         self,
         path: str,
         device: Optional[jax.Device] = None,
+        use_jax: bool = False,
     ):
         """Load a data store from a file. Returns a TrajectoryBuffer object."""
         loaded_data = np.load(path)
-        return self.deserialize(loaded_data, device)
+        return self.deserialize(loaded_data, device, use_jax)
 
     @staticmethod
     def deserialize(
         loaded_data: Dict,
         device: Optional[jax.Device] = None,
+        use_jax: bool = False,
     ):
         """Load a stream of data from a file. Returns a TrajectoryBuffer object."""
         capacity = loaded_data["capacity"]
@@ -268,16 +293,24 @@ class TrajectoryBuffer():
             DataShape(name=k, shape=v.shape[1:], dtype=str(v.dtype))
             for k, v in data.items()
         ]
-        replay_buffer = TrajectoryBuffer(capacity, data_shapes, device=device)
+        replay_buffer = TrajectoryBuffer(capacity, data_shapes, device=device, use_jax=use_jax)
         replay_buffer._trajectory = Trajectory.from_dict(loaded_data)
         replay_buffer.size = size
         replay_buffer._insert_idx = insert_idx
 
+        def replace(dataset, data):
+            if use_jax:
+                dataset = dataset.at[:size].set(data)
+            else:
+                dataset[:size] = data
+            return dataset
+
         replay_buffer.dataset = jax.tree_map(
-            lambda dataset, data: dataset.at[:size].set(data),
+            replace,
             replay_buffer.dataset,
             data,
         )
+
         for k, v in metadata.items():
             replay_buffer.metadata[k][:size] = v
         return replay_buffer
@@ -289,6 +322,7 @@ class TrajectoryBuffer():
     def __len__(self):
         """Get the number of valid data points in the data store."""
         return min(self._insert_idx, self.capacity)
+
 
 ################################################################################
 

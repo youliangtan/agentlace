@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from threading import Lock
-from typing import List, Optional
+from typing import List, Optional, TypeVar
 from agentlace.data.data_store import DataStoreBase
 from agentlace.data.trajectory_buffer import TrajectoryBuffer, DataShape
 from agentlace.data.sampler import LatestSampler, SequenceSampler
@@ -14,8 +14,13 @@ import gym
 import jax
 import chex
 import numpy as np
-from jaxrl_m.data.replay_buffer import ReplayBuffer
 import tensorflow as tf
+
+try:
+    from jaxrl_m.data.replay_buffer import ReplayBuffer
+except ImportError:
+    ReplayBuffer = None
+    print("jaxrl_m is not installed, install it if required")
 
 # import oxe_envlogger if it is installed
 try:
@@ -23,6 +28,7 @@ try:
 except ImportError:
     print("rlds logger is not installed, install it if required: "
           "https://github.com/rail-berkeley/oxe_envlogger ")
+    RLDSLogger = TypeVar("RLDSLogger")
 
 
 ##############################################################################
@@ -42,8 +48,9 @@ class TrajectoryBufferDataStore(TrajectoryBuffer, DataStoreBase):
             capacity=capacity,
             data_shapes=data_shapes,
             min_trajectory_length=min_trajectory_length,
-            device=device,
             seed=seed,
+            device=None,
+            use_jax=False,
         )
         DataStoreBase.__init__(self, capacity)
         self._lock = Lock()
@@ -85,71 +92,72 @@ class TrajectoryBufferDataStore(TrajectoryBuffer, DataStoreBase):
 
     # NOTE: method for DataStoreBase
     def latest_data_id(self):
-        return self._insert_index
+        return self._insert_idx
 
     # NOTE: method for DataStoreBase
     def get_latest_data(self, from_id: int):
         raise NotImplementedError  # TODO
 
 
-class ReplayBufferDataStore(ReplayBuffer, DataStoreBase):
-    def __init__(
-        self,
-        observation_space: gym.Space,
-        action_space: gym.Space,
-        capacity: int,
-        rlds_logger: Optional[RLDSLogger] = None,
-    ):
-        ReplayBuffer.__init__(self, observation_space, action_space, capacity)
-        DataStoreBase.__init__(self, capacity)
-        self._insert_seq_id = 0  # keeps increasing
-        self._lock = Lock()
-        self._logger = None
+if ReplayBuffer is not None:
+    class ReplayBufferDataStore(ReplayBuffer, DataStoreBase):
+        def __init__(
+            self,
+            observation_space: gym.Space,
+            action_space: gym.Space,
+            capacity: int,
+            rlds_logger: Optional[RLDSLogger] = None,
+        ):
+            ReplayBuffer.__init__(self, observation_space, action_space, capacity)
+            DataStoreBase.__init__(self, capacity)
+            self._insert_seq_id = 0  # keeps increasing
+            self._lock = Lock()
+            self._logger = None
 
-        if rlds_logger:
-            self.step_type = RLDSStepType.TERMINATION  # to init the state for restart
-            self._logger = rlds_logger
+            if rlds_logger:
+                self.step_type = RLDSStepType.TERMINATION  # to init the state for restart
+                self._logger = rlds_logger
 
-    # ensure thread safety
-    def insert(self, data):
-        with self._lock:
-            super(ReplayBufferDataStore, self).insert(data)
-            self._insert_seq_id += 1
+        # ensure thread safety
+        def insert(self, data):
+            with self._lock:
+                super(ReplayBufferDataStore, self).insert(data)
+                self._insert_seq_id += 1
 
-            # add data to the rlds logger
-            # TODO: the current impl of ReplayBuffer doesn't support
-            # proper truncation of the trajectory
+                # add data to the rlds logger
+                # TODO: the current impl of ReplayBuffer doesn't support
+                # proper truncation of the trajectory
+                if self._logger:
+                    if self.step_type == RLDSStepType.TERMINATION:
+                        self.step_type = RLDSStepType.RESTART
+                    elif not data["masks"]:  # 0 is done, 1 is not done
+                        self.step_type = RLDSStepType.TERMINATION
+                    else:
+                        self.step_type = RLDSStepType.TRANSITION
+
+                    self._logger(
+                        action=data["actions"],
+                        obs=data["next_observations"],  # TODO: check if this is correct
+                        reward=data["rewards"],
+                        step_type=self.step_type,
+                    )
+
+        # ensure thread safety
+        def sample(self, *args, **kwargs):
+            with self._lock:
+                return super(ReplayBufferDataStore, self).sample(*args, **kwargs)
+
+        # NOTE: method for DataStoreBase
+        def latest_data_id(self):
+            return self._insert_seq_id
+
+        # NOTE: method for DataStoreBase
+        def get_latest_data(self, from_id: int):
+            raise NotImplementedError  # TODO
+
+        def __del__(self):
             if self._logger:
-                if self.step_type == RLDSStepType.TERMINATION:
-                    self.step_type = RLDSStepType.RESTART
-                elif not data["masks"]:  # 0 is done, 1 is not done
-                    self.step_type = RLDSStepType.TERMINATION
-                else:
-                    self.step_type = RLDSStepType.TRANSITION
-
-                self._logger(
-                    action=data["actions"],
-                    obs=data["next_observations"],  # TODO: check if this is correct
-                    reward=data["rewards"],
-                    step_type=self.step_type,
-                )
-
-    # ensure thread safety
-    def sample(self, *args, **kwargs):
-        with self._lock:
-            return super(ReplayBufferDataStore, self).sample(*args, **kwargs)
-
-    # NOTE: method for DataStoreBase
-    def latest_data_id(self):
-        return self._insert_seq_id
-
-    # NOTE: method for DataStoreBase
-    def get_latest_data(self, from_id: int):
-        raise NotImplementedError  # TODO
-
-    def __del__(self):
-        if self._logger:
-            self._logger.close()
+                self._logger.close()
 
 ##############################################################################
 

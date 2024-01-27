@@ -45,8 +45,6 @@ class DataStoreBase:
         NOTE: override this function to create a more efficient
         implementation for custom data store, e.g. slicing in np
         """
-        if len(batch_data) > self.capacity:
-            batch_data = batch_data[-self.capacity:]
         for data in batch_data:
             self.insert(data)
 

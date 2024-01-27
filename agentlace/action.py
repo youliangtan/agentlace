@@ -93,7 +93,7 @@ class ActionServer:
             :param threaded: Whether to start the server in a separate thread
         """
         if threaded:
-            self.thread = threading.Thread(target=self.server.run)
+            self.thread = threading.Thread(target=self.server.run, daemon=True)
             self.thread.start()
         else:
             self.server.run()
