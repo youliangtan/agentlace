@@ -12,8 +12,8 @@ from agentlace.data.data_store import DataStoreBase
 
 
 def make_datastore(
-        dataset_dir, capacity: int, type="replay_buffer"
-    ) -> DataStoreBase:
+    dataset_dir, capacity: int, type="replay_buffer"
+) -> DataStoreBase:
     """
     Load an RLDS dataset from the specified directory and populate it
     into the given datastore.
@@ -57,10 +57,10 @@ def make_datastore(
 
 
 def populate_datastore(
-        datastore: DataStoreBase,
-        dataset: tf.data.Dataset,
-        type: Optional[str] = None
-    ) -> DataStoreBase:
+    datastore: DataStoreBase,
+    dataset: tf.data.Dataset,
+    type: Optional[str] = None
+) -> DataStoreBase:
     """
     Populate the given datastore with the RLDS dataset
 
