@@ -13,14 +13,17 @@ class RLDSWriter:
         version: str,
         *,
         max_episodes_per_file: int = 1000,
-    ):
+    ):  
         data_features = tf.nest.map_structure(
             lambda x: tfds.features.Tensor(shape=x.shape, dtype=x.dtype), data_spec
         )
+        # https://github.com/tensorflow/datasets/blob/master/tensorflow_datasets/rlds/rlds_base.py
         ds_config = DatasetConfig(
             name=dataset_name,
             observation_info=tfds.features.FeaturesDict(data_features["observation"]),
             action_info=data_features["action"],
+            reward_info=data_features.get("reward"),
+            discount_info=data_features.get("discount"),
         )
         ds_identity = dataset_info.DatasetIdentity(
             name=ds_config.name,

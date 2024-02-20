@@ -1,3 +1,10 @@
+"""
+Requirements:
+    dlimp:  git clone git@github.com:kvablack/dlimp.git
+    tensorflow_datasets: pip install tensorflow-datasets
+    tf-agents-nightly: pip install tf-agents
+"""
+
 from functools import partial
 from typing import Any, Optional
 from agentlace.data.rlds_writer import RLDSWriter
@@ -8,7 +15,6 @@ from tf_agents.replay_buffers.episodic_replay_buffer import (
 )
 from agentlace.data.data_store import DataStoreBase
 from dlimp.dataset import DLataset, _wrap as dlimp_wrap
-
 
 class EpisodicTFDataStore(DataStoreBase):
     def __init__(
@@ -83,17 +89,31 @@ if __name__ == "__main__":
         "is_first": tf.TensorSpec(shape=(), dtype=tf.bool),
         "is_last": tf.TensorSpec(shape=(), dtype=tf.bool),
         "is_terminal": tf.TensorSpec(shape=(), dtype=tf.bool),
+        "reward": tf.TensorSpec(shape=(), dtype=tf.float32),
+        "discount": tf.TensorSpec(shape=(), dtype=tf.float32),
     }
+
+    DATA_DIRECTORY = "/tmp/test_rlds_agentlace"
+    
+    import os
+    import shutil
+
+    # Delete the directory if it exists and create a new one
+    if os.path.exists(DATA_DIRECTORY):
+        shutil.rmtree(DATA_DIRECTORY)
+    os.makedirs(DATA_DIRECTORY)
 
     logger = RLDSWriter(
         "test_rlds_agentlace",
         data_spec,
-        data_directory="/tmp/test_rlds_agentlace",
+        data_directory=DATA_DIRECTORY,
         version="0.0.1",
     )
     buffer = EpisodicTFDataStore(1000, data_spec, rlds_logger=logger)
     dataset = buffer.as_dataset()
     dataset_iter = dataset.flatten().batch(256).as_numpy_iterator()
+    
+    print("Inserting data")
 
     for episode in range(100):
         ep_len = tf.random.uniform(shape=(), minval=1, maxval=10, dtype=tf.int32)
@@ -108,6 +128,8 @@ if __name__ == "__main__":
                     "is_first": tf.constant(i == 0, dtype=tf.bool),
                     "is_last": tf.constant(i == ep_len - 1, dtype=tf.bool),
                     "is_terminal": tf.constant(False, dtype=tf.bool),
+                    "reward": tf.constant(1, dtype=tf.float32),
+                    "discount": tf.constant(1, dtype=tf.float32),
                 }
             )
 
@@ -117,3 +139,31 @@ if __name__ == "__main__":
         next(dataset_iter)
     for _ in trange(1000, desc="Benchmarking sampling speed..."):
         next(dataset_iter)
+
+    # important to close the logger so that the 
+    logger.close()
+    
+    ##########################################################################
+    # Simple test cases
+    ##########################################################################
+
+    # read the dataset from the disk
+    import tensorflow_datasets  as tfds
+    dataset = tfds.builder_from_directory(DATA_DIRECTORY).as_dataset(split="all")
+
+    print("size of dataset", len(list(dataset)))
+
+    assert len(list(dataset)) == 100, "There should be 100 episodes in the dataset"
+    for episode in dataset.take(1):
+        steps = episode["steps"]
+        for i, step in enumerate(steps):
+            if i == 0:
+                assert step["is_first"].numpy() == True, "first step is is_first=True"
+            else:
+                assert step["is_first"].numpy() == False, "non-first step is is_first=False"
+
+            assert len(step["observation"]) == 2, "observation should have 2 keys"
+
+            print(" is first and last: ", step["is_first"].numpy(), step["is_last"].numpy())
+            is_last = step["is_last"]
+    print("Done All")
