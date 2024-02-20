@@ -50,9 +50,15 @@ class RLDSWriter:
         self._sequential_writer.add_examples({"train": [{"steps": episode}]})
         self._episode = []
 
-    def close(self):
+    def flush(self):
         if len(self._episode) > 0:
             self._episode[-1]["is_last"] = tf.constant(True, dtype=tf.bool)
             self._write_episode()
 
+        for split in self._sequential_writer._splits.values():
+            if split.current_shard is not None:
+                split.current_shard.writer.flush()
+
+    def close(self):
+        self.flush()
         self._sequential_writer.close_all()
