@@ -4,6 +4,9 @@
 
 A simple framework for distributed machine learning applications for agent (policy). In many instances we would like to run the agent in a distributed manner (e.g. async, different process, thread, env, or machine). Agentlace faccilites the distributed data stream of nodes, making this connection seamless. Built on a client-server architecture, Agentlace efficiently manages the transport layer for multiple clients and a central server.
 
+
+> [SERL (A Software Suite for Sample-Efficient Robotic Reinforcement Learning)](https://github.com/rail-berkeley/serl) provides working examples on how to use `agentlace` for distributed reinforcement learning via learner and actor.
+
 ## Installation
 
 ```bash

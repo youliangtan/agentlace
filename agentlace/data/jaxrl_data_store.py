@@ -67,9 +67,7 @@ class TrajectoryBufferDataStore(TrajectoryBuffer, DataStoreBase):
 
             if self._logger:
                 # handle restart when it was done before
-                if self.step_type == RLDSStepType.TERMINATION:
-                    self.step_type = RLDSStepType.RESTART
-                elif self.step_type == RLDSStepType.TRUNCATION:
+                if self.step_type in {RLDSStepType.TERMINATION, RLDSStepType.TRUNCATION}:
                     self.step_type = RLDSStepType.RESTART
                 elif not data["masks"]:  # 0 is done, 1 is not done
                     self.step_type = RLDSStepType.TERMINATION
@@ -128,7 +126,7 @@ if ReplayBuffer is not None:
                 # TODO: the current impl of ReplayBuffer doesn't support
                 # proper truncation of the trajectory
                 if self._logger:
-                    if self.step_type == RLDSStepType.TERMINATION:
+                    if self.step_type in {RLDSStepType.TERMINATION, RLDSStepType.TRUNCATION}:
                         self.step_type = RLDSStepType.RESTART
                     elif not data["masks"]:  # 0 is done, 1 is not done
                         self.step_type = RLDSStepType.TERMINATION
