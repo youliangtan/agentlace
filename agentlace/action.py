@@ -118,25 +118,29 @@ class ActionServer:
 
 
 class ActionClient:
-    def __init__(self, server_ip: str, config: ActionConfig, max_retry=2):
+    def __init__(self,
+                 server_ip: str,
+                 config: ActionConfig, 
+                 wait_for_server: bool = True
+                 ):
         """
         Args:
             :param server_ip: IP of the server
             :param config: Config object
-            :param max_retry: Maximum number of retries to connect the server
+            :param wait_for_server: Whether to retry connecting to the server
         """
         self.client = ReqRepClient(server_ip, config.port_number)
 
         # Retry to connect to the server for multiple times
-        for _ in range(max_retry):
-            res = self.client.send_msg({"type": "hash"})
-            if res is not None:
-                break
-            logging.error(f"Failed to connect to action server of "
-                          f"{server_ip}:{config.port_number}. Retrying...")
-            time.sleep(2)  # Wait for 1 second before retrying
-        else:
-            raise Exception("Failed to connect to action server after multiple retries")
+        res = self.client.send_msg({"type": "hash"})
+        if res is None:
+            if wait_for_server:
+                while res is None:
+                    logging.error(f"Failed to connect to action server of "
+                                f"{server_ip}:{config.port_number}. Retrying...")
+                    time.sleep(2)
+            else:
+                raise Exception("Failed to connect to action server")
 
         # Check hash of server config to ensure compatibility
         config_json = json.dumps(asdict(config), separators=(',', ':'))

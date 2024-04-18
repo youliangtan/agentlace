@@ -15,7 +15,7 @@ setup(
         'typing_extensions',
         'opencv-python',
         'lz4',
-        'gym',
+        'gym>=0.26.0',
     ],
     zip_safe=False
 )

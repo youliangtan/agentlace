@@ -32,9 +32,8 @@ def run_gym_env(env: gym.Env):
         total_reward = 0
 
         while not done:
-            env.render()  # Render the environment (optional)
             action = env.action_space.sample()  # Randomly select an action
-            observation, reward, done, info = env.step(action)
+            observation, reward, done, trunc, info = env.step(action)
             total_reward += reward
 
         print(f"Episode {episode+1}: Total Reward = {total_reward}")
@@ -48,11 +47,12 @@ if __name__ == '__main__':
     parser.add_argument("--port", type=int, default=5556)
     parser.add_argument("--client", action="store_true")
     parser.add_argument("--server", action="store_true")
+    parser.add_argument("--render_mode", type=str, default="human")
     args = parser.parse_args()
 
     if args.server:
         print("Running Action Env server")
-        env = gym.make('CartPole-v1')
+        env = gym.make('CartPole-v1', render_mode=args.render_mode)
         env = ActionServerEnvWrapper(env, port=args.port)
         env.start()
         env.stop()
@@ -65,7 +65,7 @@ if __name__ == '__main__':
 
     else:
         print("Running default cartpole env")
-        env = gym.make('CartPole-v1')
+        env = gym.make('CartPole-v1', render_mode=args.render_mode)
         run_gym_env(env)
 
     print("Done")

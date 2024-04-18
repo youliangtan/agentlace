@@ -50,9 +50,9 @@ class ActionClientEnv(gym.Env):
         """Standard gym reset function."""
         return self._try_act("reset", kwargs)
 
-    def render(self, mode="human"):
+    def render(self, **kwargs):
         """Standard gym render function."""
-        return self._try_act("render", mode)
+        return self._try_act("render", kwargs)
 
     def close(self):
         """Standard gym close function."""
@@ -127,7 +127,7 @@ class ActionServerEnvWrapper(gym.Wrapper):
         elif type == "step":
             ret_tuple = self.env.step(req_payload)
         elif type == "render":
-            ret_tuple = self.env.render(mode=req_payload)
+            ret_tuple = self.env.render(**req_payload)
         elif type == "close":
             ret_tuple = self.env.close()
         else:
