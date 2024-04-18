@@ -15,6 +15,7 @@ setup(
         'typing_extensions',
         'opencv-python',
         'lz4',
+        'gym',
     ],
     zip_safe=False
 )

@@ -13,6 +13,7 @@ import threading
 import logging
 from dataclasses import dataclass, asdict
 import json
+import time
 
 
 ##############################################################################
@@ -117,13 +118,27 @@ class ActionServer:
 
 
 class ActionClient:
-    def __init__(self, server_ip: str, config: ActionConfig):
+    def __init__(self, server_ip: str, config: ActionConfig, max_retry=2):
+        """
+        Args:
+            :param server_ip: IP of the server
+            :param config: Config object
+            :param max_retry: Maximum number of retries to connect the server
+        """
         self.client = ReqRepClient(server_ip, config.port_number)
-        # Check hash of server config to ensure compatibility
-        res = self.client.send_msg({"type": "hash"})
-        if res is None:
-            raise Exception("Failed to connect to action server")
 
+        # Retry to connect to the server for multiple times
+        for _ in range(max_retry):
+            res = self.client.send_msg({"type": "hash"})
+            if res is not None:
+                break
+            logging.error(f"Failed to connect to action server of "
+                          f"{server_ip}:{config.port_number}. Retrying...")
+            time.sleep(2)  # Wait for 1 second before retrying
+        else:
+            raise Exception("Failed to connect to action server after multiple retries")
+
+        # Check hash of server config to ensure compatibility
         config_json = json.dumps(asdict(config), separators=(',', ':'))
         if compute_hash(config_json) != compute_hash(res["payload"]):
             raise Exception(
