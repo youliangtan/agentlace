@@ -29,7 +29,20 @@ On a different terminal, you can also run it on a different machine and provide 
 python3 examples/action_streamer.py --client
 ```
 
-2. Async learner-actor with Gym RL env
+2. Gym Env as action server
+
+Say we have a simple `env = gym.make('CartPole-v1')` environment. Run example: `python3 examples/action_cartpole_env.py`
+
+We can use agentlace to run the environment as a server, and the client can send action to the server in a distributed manner. Meanwhile, we still retain the gym API on the client and server side.
+
+```bash
+# Run the server first
+python3 examples/action_cartpole_env.py --server
+# Run the client on a different terminal
+python3 examples/action_cartpole_env.py --client
+```
+
+3. Async learner-actor with Gym RL env
 
 Requires [jax](https://jax.readthedocs.io/en/latest/installation.html), [jaxrl_m](https://github.com/rail-berkeley/jaxrl_minimal), [mujuco-py](https://github.com/openai/mujoco-py#install-mujoco) as dependencies.
 
