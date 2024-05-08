@@ -4,7 +4,7 @@ import gym
 import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from typing import Optional
+from typing import Dict, Optional, Callable
 
 from agentlace.data.data_store import DataStoreBase
 
@@ -56,10 +56,25 @@ def make_datastore(
     return populate_datastore(datastore, dataset, type)
 
 
+"""
+This function is used for user to create custom transform of the data
+before inserting into the datastore replay buffer via the populate_datastore() fn
+
+args:
+    data: Dict, data to be inserted into the datastore
+    metadata: Dict, metadata extracted from the step
+returns:
+    Optional[Dict], data to be inserted into the datastore
+        return None to skip this data point
+"""
+DataTransformFunction = Callable[[Dict, Dict], Optional[Dict]]
+
+
 def populate_datastore(
     datastore: DataStoreBase,
     dataset: tf.data.Dataset,
-    type: Optional[str] = None
+    type: Optional[str] = None,
+    data_transform: Optional[DataTransformFunction] = None,
 ) -> DataStoreBase:
     """
     Populate the given datastore with the RLDS dataset
@@ -67,26 +82,35 @@ def populate_datastore(
     Args:
         - datastore: Replay buffer to populate.
         - dataset: RLDS dataset.
-        - type: optional, additional support for 'trajectory_buffer' and w'ith_dones'
+        - type: optional, additional support for 'trajectory_buffer' and 'with_dones'
+        - data_transform: optional[callable], function to transform the data before
+                        inserting into the datastore. refer to above DataTransformFunction
     Returns:
         - datastore: Datastore populated with the RLDS dataset.
     """
+    # get the keys to used as metadata if needed by the data_transform() fn
+    step_keys = dataset.element_spec["steps"].element_spec.keys()
+    metadata_keys = [k for k in step_keys if k not in [
+        'observation', 'action', 'reward', 'is_terminal', 'is_last']]
+    # print("metadata_keys: ", metadata_keys)
+
     # Iterate over episodes in the dataset
     for episode in dataset:
         steps = episode['steps']
         obs = None
+        _step_size = len(steps)
         # Iterate through steps in the episode
         for i, step in enumerate(steps):
             if i == 0:
-                obs = get_numpy_from_tensor(step['observation'])
+                obs = get_value_from_tensor(step['observation'])
                 continue
 
             # Extract relevant data from the step
-            next_obs = get_numpy_from_tensor(step['observation'])
-            action = get_numpy_from_tensor(step['action'])
-            reward = step.get('reward', 0).numpy()     # Defaulting to 0 if 'reward' key is missing
+            next_obs = get_value_from_tensor(step['observation'])
+            action = get_value_from_tensor(step['action'])
+            reward = step.get('reward', 0).numpy() # default 0 if 'reward' key is missing
             terminate = step['is_terminal'].numpy()  # or is_last
-            truncate = step['is_last'].numpy()  # truncate is not avail in the ReplayBuffer
+            truncate = step['is_last'].numpy() # truncate is not avail in the ReplayBuffer
 
             data = dict(
                 observations=obs,
@@ -100,6 +124,24 @@ def populate_datastore(
                 data["end_of_trajectory"] = terminate or truncate
             elif type == "with_dones":
                 data["dones"] = terminate or truncate
+
+            # Transform the data if user provided a data_transform function
+            # NOTE: the arg data is a dict of the data inserted into the datastore
+            # and the metadata is a dict of the metadata extracted from the step
+            # which are not part of data
+            if data_transform is not None:
+                metadata = dict(
+                    step=i,
+                    step_size=_step_size,
+                )
+                for key in metadata_keys:
+                    metadata[key] = get_value_from_tensor(step[key])
+                data = data_transform(data, metadata)
+
+                # data is None, expect use would like to skip this data point
+                if data is None:
+                    obs = next_obs
+                    continue
 
             # Insert data into the replay buffer
             datastore.insert(data)
@@ -131,10 +173,12 @@ def tensor_spec_to_gym_space(tensor_spec: tf.data.experimental.TensorSpec):
         raise TypeError(f"Unsupported tensor spec type: {type(tensor_spec)}")
 
 
-def get_numpy_from_tensor(tensor):
+def get_value_from_tensor(tensor):
     """
-    Convert a tensor to numpy
+    Convert a tensor to numpy or other python types
     """
     if isinstance(tensor, dict):
-        return {k: get_numpy_from_tensor(v) for k, v in tensor.items()}
+        return {k: get_value_from_tensor(v) for k, v in tensor.items()}
+    elif tensor.dtype == tf.string:
+        return tensor.numpy().decode('utf-8')
     return tensor.numpy()
