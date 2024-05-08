@@ -9,10 +9,10 @@ logging.basicConfig(level=logging.INFO)
 
 # These describes the ports and API keys used in the agentlace server
 DefaultActionConfig = ActionConfig(
-    port_number=5556,
+    port_number=5546,
     action_keys=["reset", "step", "render", "close"],
     observation_keys=["observation_space", "action_space"],
-    broadcast_port=5556 + 1,
+    broadcast_port=5546 + 1,
 )
 
 
@@ -21,7 +21,7 @@ class ActionClientEnv(gym.Env):
 
     def __init__(self,
                  host: str = "localhost",
-                 port: int = 5556,
+                 port: int = 5546,
                  retry_interval: float = 0.5,
                  ):
         """
@@ -82,7 +82,7 @@ class ActionServerEnvWrapper(gym.Wrapper):
 
     def __init__(self,
                  env: gym.Env,
-                 port: int = 5556,
+                 port: int = 5546,
                  ):
         """
         Provide the manipulator interface to the server.

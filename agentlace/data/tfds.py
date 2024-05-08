@@ -4,7 +4,7 @@ import gym
 import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from typing import Optional, Callable
+from typing import Dict, Optional, Callable
 
 from agentlace.data.data_store import DataStoreBase
 
@@ -56,11 +56,25 @@ def make_datastore(
     return populate_datastore(datastore, dataset, type)
 
 
+"""
+This function is used for user to create custom transform of the data
+before inserting into the datastore replay buffer via the populate_datastore() fn
+
+args:
+    data: Dict, data to be inserted into the datastore
+    metadata: Dict, metadata extracted from the step
+returns:
+    Optional[Dict], data to be inserted into the datastore
+        return None to skip this data point
+"""
+DataTransformFunction = Callable[[Dict, Dict], Optional[Dict]]
+
+
 def populate_datastore(
     datastore: DataStoreBase,
     dataset: tf.data.Dataset,
     type: Optional[str] = None,
-    data_transform: Optional[Callable] = None,
+    data_transform: Optional[DataTransformFunction] = None,
 ) -> DataStoreBase:
     """
     Populate the given datastore with the RLDS dataset
@@ -70,15 +84,14 @@ def populate_datastore(
         - dataset: RLDS dataset.
         - type: optional, additional support for 'trajectory_buffer' and 'with_dones'
         - data_transform: optional[callable], function to transform the data before
-                        inserting into the datastore.
-                        with format: data_transform(data: Dict, metadata: Dict) -> Dict
-
+                        inserting into the datastore. refer to above DataTransformFunction
     Returns:
         - datastore: Datastore populated with the RLDS dataset.
     """
     # get the keys to used as metadata if needed by the data_transform() fn
     step_keys = dataset.element_spec["steps"].element_spec.keys()
-    metadata_keys = [k for k in step_keys if k not in ['observation', 'action', 'reward', 'is_terminal', 'is_last']]
+    metadata_keys = [k for k in step_keys if k not in [
+        'observation', 'action', 'reward', 'is_terminal', 'is_last']]
     # print("metadata_keys: ", metadata_keys)
 
     # Iterate over episodes in the dataset
@@ -95,9 +108,11 @@ def populate_datastore(
             # Extract relevant data from the step
             next_obs = get_value_from_tensor(step['observation'])
             action = get_value_from_tensor(step['action'])
-            reward = step.get('reward', 0).numpy()     # Defaulting to 0 if 'reward' key is missing
+            # Defaulting to 0 if 'reward' key is missing
+            reward = step.get('reward', 0).numpy()
             terminate = step['is_terminal'].numpy()  # or is_last
-            truncate = step['is_last'].numpy()  # truncate is not avail in the ReplayBuffer
+            # truncate is not avail in the ReplayBuffer
+            truncate = step['is_last'].numpy()
 
             data = dict(
                 observations=obs,
@@ -124,6 +139,11 @@ def populate_datastore(
                 for key in metadata_keys:
                     metadata[key] = get_value_from_tensor(step[key])
                 data = data_transform(data, metadata)
+
+                # data is None, expect use would like to skip this data point
+                if data is None:
+                    obs = next_obs
+                    continue
 
             # Insert data into the replay buffer
             datastore.insert(data)
