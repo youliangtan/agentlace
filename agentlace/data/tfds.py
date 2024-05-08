@@ -108,11 +108,9 @@ def populate_datastore(
             # Extract relevant data from the step
             next_obs = get_value_from_tensor(step['observation'])
             action = get_value_from_tensor(step['action'])
-            # Defaulting to 0 if 'reward' key is missing
-            reward = step.get('reward', 0).numpy()
+            reward = step.get('reward', 0).numpy() # default 0 if 'reward' key is missing
             terminate = step['is_terminal'].numpy()  # or is_last
-            # truncate is not avail in the ReplayBuffer
-            truncate = step['is_last'].numpy()
+            truncate = step['is_last'].numpy() # truncate is not avail in the ReplayBuffer
 
             data = dict(
                 observations=obs,
