@@ -17,7 +17,7 @@ IS_REPLAY_BUFFER = False  # NOTE this is for testing replay buffer
 
 def new_data_callback(table_name, payload: Any) -> dict:
     """Simulated callback for training data."""
-    assert table_name == "table1", "Invalid table name"
+    assert table_name in {"table1", "table2"}, f"Invalid table name"
     return {}
 
 
@@ -104,7 +104,9 @@ def test_trainer():
 
     # register a data store to trainer server
     ds_server = helper_create_data_store(SERVER_CAPACITY)
+    ds_server2 = helper_create_data_store(SERVER_CAPACITY)
     server.register_data_store("table1", ds_server)
+    server.register_data_store("table2", ds_server2)
     server.start(threaded=True)
 
     assert len(ds_server) == 0, "Invalid server data store length"
@@ -114,15 +116,19 @@ def test_trainer():
 
     # 2. Set up Trainer Client
     ds_client = helper_create_data_store(CLIENT_CAPACITY)
+    ds_client2 = helper_create_data_store(CLIENT_CAPACITY)
     client = TrainerClient(
-        'table1', '127.0.0.1', trainer_config, data_store=ds_client)
+        'table1',
+        '127.0.0.1',
+        trainer_config,
+        # data_store=ds_client,
+        data_stores={"table1": ds_client, "table2": ds_client2},
+    )
     client.recv_network_callback(_network_received_callback)
 
     data_point1 = np.array([1, 2, 3])
     insert_helper(ds_client, data_point1)
     assert len(ds_client) == 1, "Invalid client data store length"
-
-    len(client.data_store) == 1, "Invalid client data store length"
 
     # 3. Client update the server
     insert_helper(ds_client, np.array([4, 5, 6]))
@@ -143,9 +149,12 @@ def test_trainer():
     assert len(ds_server) == 3
 
     insert_helper(ds_client, np.array([10, 11, 12]))
+    insert_helper(ds_client2, np.array([30, 31, 32]))
     assert len(ds_client) == CLIENT_CAPACITY
+    assert len(ds_server2) == 0
     client.update() # explicitly call update
     assert len(ds_server) == 4
+    assert len(ds_server2) == 1
 
     # 5. Custom get stats request
     response = client.request("get-stats", {})
