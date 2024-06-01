@@ -95,6 +95,7 @@ def populate_datastore(
     # print("metadata_keys: ", metadata_keys)
 
     # Iterate over episodes in the dataset
+    reward, terminate, truncate = None, None, None
     for episode in dataset:
         steps = episode['steps']
         obs = None
@@ -103,15 +104,14 @@ def populate_datastore(
         for i, step in enumerate(steps):
             if i == 0:
                 obs = get_value_from_tensor(step['observation'])
+                action = get_value_from_tensor(step['action'])
+                reward = step.get('reward', 0.).numpy() # default 0 if 'reward' key is missing
+                terminate = step['is_terminal'].numpy()  # or is_last
+                truncate = step['is_last'].numpy() # truncate is not avail in the ReplayBuffer
                 continue
 
-            # Extract relevant data from the step
+            # extract data from the step to insert into the datastore
             next_obs = get_value_from_tensor(step['observation'])
-            action = get_value_from_tensor(step['action'])
-            reward = step.get('reward', 0).numpy() # default 0 if 'reward' key is missing
-            terminate = step['is_terminal'].numpy()  # or is_last
-            truncate = step['is_last'].numpy() # truncate is not avail in the ReplayBuffer
-
             data = dict(
                 observations=obs,
                 next_observations=next_obs,
@@ -119,11 +119,20 @@ def populate_datastore(
                 rewards=reward,
                 masks=1 - terminate,  # 1 is transition, 0 is terminal
             )
-
             if type == "trajectory_buffer":
                 data["end_of_trajectory"] = terminate or truncate
             elif type == "with_dones":
                 data["dones"] = terminate or truncate
+
+            action = get_value_from_tensor(step['action'])
+            reward = step.get('reward', 0.).numpy() # default 0 if 'reward' key is missing
+            terminate = step['is_terminal'].numpy()  # or is_last
+            truncate = step['is_last'].numpy() # truncate is not avail in the ReplayBuffer
+
+            # TODO: check if terminate and truncate are recorded in the final
+            # data inserted into the datastore
+            if terminate or truncate:
+                pass
 
             # Transform the data if user provided a data_transform function
             # NOTE: the arg data is a dict of the data inserted into the datastore
@@ -131,7 +140,7 @@ def populate_datastore(
             # which are not part of data
             if data_transform is not None:
                 metadata = dict(
-                    step=i,
+                    step=i, # -1 # TODO
                     step_size=_step_size,
                 )
                 for key in metadata_keys:
@@ -143,6 +152,7 @@ def populate_datastore(
                     obs = next_obs
                     continue
 
+            # print("data: ", data['actions'], data['rewards'], data['masks'], data['dones'])
             # Insert data into the replay buffer
             datastore.insert(data)
             obs = next_obs
