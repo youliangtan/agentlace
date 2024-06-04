@@ -146,19 +146,25 @@ class TrainerClient:
                  name: str,
                  server_ip: str,
                  config: TrainerConfig,
-                 data_store: DataStoreBase,
+                 data_store: DataStoreBase = None,
+                 data_stores: Dict[str, DataStoreBase] = {},
                  log_level=logging.INFO,
                  wait_for_server: bool = False):
         """
         Args:
-            :param name: Name of the client, creates a unique datastore
+            :param name: Name of the client
             :param server_ip: IP address of the server
             :param config: Config object
-            :param data_store: Datastore to store the data
+            :param data_store: Datastore to store the data (deprecated soon)
+            :param data_stores: Map of data stores (str id -> DataStoreBase)
             :param log_level: Logging level
             :param wait_for_server: Whether to wait for the server to start
+
+        Note:
+            name, and data_store will deprecate in future versions, to support
+            multiple data stores in single client, use `data_stores_map` instead.
         """
-        self.name = name
+        self.client_name = name
         self.req_rep_client = ReqRepClient(server_ip, config.port_number, log_level=log_level)
         self.server_ip = server_ip
         self.config = config
@@ -168,8 +174,12 @@ class TrainerClient:
         self.update_thread = None
         self.last_request_time = 0
         self.log_level = log_level
-        logging.basicConfig(level=log_level)
 
+        # Supporting multiple data stores
+        self.data_stores_map = data_stores  # dict of str -> DataStoreBase
+        self.last_sync_data_id_map = {name: -1 for name in self.data_stores_map.keys()}
+
+        logging.basicConfig(level=log_level)
         res = self.req_rep_client.send_msg({"type": "hash"})
 
         # If wait for server
@@ -201,24 +211,49 @@ class TrainerClient:
         This will explicity trigger an update to the data store
             :return Response from the trainer, return None if timeout
         """
-        latest_id = self.data_store.latest_data_id()
-        batch_data = self.data_store.get_latest_data(self.last_sync_data_id)
-        res = self._update({"data": batch_data})
-        if res and res["success"]:
-            self.last_sync_data_id = latest_id
-        else:
-            logging.warning("Failed to update data")
-        return res
+        # if single data store is used
+        if self.data_store is not None:
+            latest_id = self.data_store.latest_data_id()
+            batch_data = self.data_store.get_latest_data(self.last_sync_data_id)
+            res = self._update_ds(self.client_name, {"data": batch_data})
+            if res and res["success"]:
+                self.last_sync_data_id = latest_id
+            else:
+                logging.warning("Failed to update data")
+            return res
 
-    def _update(self, data: dict) -> Optional[dict]:
+        # if multiple data stores is used
+        # TODO (YL): experimental feature, need robust testing
+        elif self.data_stores_map:
+            res = None
+            for name, data_store in self.data_stores_map.items():
+                _latest_id = data_store.latest_data_id()
+                _last_sync_id = self.last_sync_data_id_map[name]
+                batch_data = data_store.get_latest_data(_last_sync_id)
+
+                # if no new inserted data since last sync, skip the update
+                if len(batch_data) == 0:
+                    res = {"success": True}
+                else:
+                    res = self._update_ds(name, {"data": batch_data})
+
+                if res and res["success"]:
+                    self.last_sync_data_id_map[name] = _latest_id
+                else:
+                    # return failed response if any of the data store fails
+                    logging.warning(f"Failed to update datastore: {name}")
+                    return res
+            return res  # return the last response
+        return None
+
+    def _update_ds(self, name: str, data: dict) -> Optional[dict]:
         """
         internal update method that will send the data to the server
+            :name Name of the data store
             :param data: Payload to send to the trainer
             :return: Response from the trainer, return None if timeout
         """
-        msg = {"type": "data",
-               "store_name": self.name,
-               "payload": data}
+        msg = {"type": "data", "store_name": name, "payload": data}
         if self.config.rate_limit and \
                 time.time() - self.last_request_time < 1 / self.config.rate_limit:
             logging.warning("Rate limit exceeded")
@@ -236,8 +271,7 @@ class TrainerClient:
         """
         if type not in self.request_types:
             return None
-        msg = {"type": type,
-               "payload": payload}
+        msg = {"type": type, "payload": payload}
         if self.config.rate_limit and \
                 time.time() - self.last_request_time < 1 / self.config.rate_limit:
             logging.warning("Rate limit exceeded")
@@ -278,13 +312,16 @@ class TrainerClient:
 
 ##############################################################################
 
-class TrainerTunnel:
+
+class TrainerSMInterface:
     """
-    This is a simple implementation to recreate the transport layer interface
-    of TrainerServer and TrainerClient. Helpful to test multithreaded operation
-    for TrainerServer and TrainerClient, while sharing the same datastore.
+    Utilized shared-memory to recreate the transport layer interface
+    of TrainerServer and TrainerClient. Helpful for single-process
+    multithreaded operation, while maintaining the same interface as
+    the TrainerServer and TrainerClient.
         NOTE: this suppose to be an experimental feature
     """
+
     def __init__(self):
         self._recv_network_fn = None
         self._req_callback_fn = None
@@ -299,14 +336,14 @@ class TrainerTunnel:
             self._recv_network_fn(params)
 
     def start(self, *args, **kwargs):
-        pass # Do nothing
+        pass  # Do nothing
 
     def stop(self):
-        pass # Do nothing
+        pass  # Do nothing
 
     def update(self):
         """Refer to TrainerClient.update()"""
-        pass # Do nothing since assume shared datastore
+        pass  # Do nothing since assume shared datastore
 
     def register_request_callback(self, callback_fn: Callable):
         """A impl within TrainerServer.init()"""
@@ -317,7 +354,7 @@ class TrainerTunnel:
         if self._req_callback_fn:
             return self._req_callback_fn(type, payload)
         return None
-    
+
     def start_async_update(self, interval: int = 10):
         """
         Refer to TrainerClient.start_async_update()

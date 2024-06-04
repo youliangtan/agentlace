@@ -92,16 +92,16 @@ B -- "publish_obs()" --> A
 2. **Trainer compute as server: `agentlace.TrainerServer` and `agentlace.TrainerClient`**
    - `TrainerClient` provides consistent datastore update to server and gets new network
 
-This supports distributed datastore, and enable multiple clients to send data to server. The server can then publish the new network to all clients.
+This enables distributed datastore (ds1 and ds2), and enables multiple clients to send data to server. The server can then publish the new network to all clients.
 
 *Clients keep their own instance of their datastore, call the `update()` method to provide the latest datastore update to the trainer server via an internal datastore (ReplayBuffer). The trainer retrieve data from the datastore and provide the trained network to client via `publish_network()` method*
 
 ```mermaid
 graph LR
-A[ActorA - client] -- "update()" --> B((Learner - \n Trainer Server))
+A[ActorA - client ds1] -- "update()" --> B((Learner - \n Trainer Server, \n ds1 ds2))
 B -- "publish_network()" --> A
 A -- "send_request()" --> B
-G[ActorB - client] <--> B
+G[ActorB - client ds2] <--> B
 ```
 
 1. **Inference compute as server: `agentlace.InferenceServer` and `agentlace.InferenceClient`**
@@ -259,3 +259,15 @@ pytest-3 agentlace/tests/test_data_store.py
 ```
 
 - The current implementation mainly uses zeromq as communication protocol, it should be easy to extend it to support other protocols such as grpc. (TODO: impl abstract function when there is a need)
+
+## Citation
+
+```bibtex
+@software{agentlace2024,
+  author = {You Liang Tan},
+  title = {Agentlace, framework for distributed agent policy},
+  month = May,
+  year = 2024,
+  url = {https://github.com/youliangtan/agentlace},
+}
+```
