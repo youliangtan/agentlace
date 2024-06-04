@@ -64,17 +64,17 @@ def test_queued_data_store():
     ds.insert(3)
     assert len(ds) == 3
     assert len(ds.get_latest_data(data_id_2)) == 1
-    
+
     ds.batch_insert([4, 5, 6])
     assert len(ds) == 6
     data_id_6 = ds.latest_data_id()
-    
+
     ds.batch_insert([7, 8, 9])
     assert len(ds) == 6
     # 3 is lost since the capacity is 6
     assert ds.get_latest_data(data_id_2) == [4, 5, 6, 7, 8, 9]
     assert ds.get_latest_data(data_id_6) == [7, 8, 9]
-    
+
     # this checks if batch insert will only insert the last n=6 data
     # since the capacity is 6
     data_id_9 = ds.latest_data_id()
@@ -102,59 +102,64 @@ def test_trainer():
     )
     server = TrainerServer(trainer_config, new_data_callback, request_callback)
 
-    # register a data store to trainer server
-    ds_server = helper_create_data_store(SERVER_CAPACITY)
-    ds_server2 = helper_create_data_store(SERVER_CAPACITY)
-    server.register_data_store("table1", ds_server)
-    server.register_data_store("table2", ds_server2)
+    # register a data store to trainer server with 2 data stores
+    ds_trainer1 = helper_create_data_store(SERVER_CAPACITY)
+    ds_trainer2 = helper_create_data_store(SERVER_CAPACITY)
+    server.register_data_store("table1", ds_trainer1)
+    server.register_data_store("table2", ds_trainer2)
     server.start(threaded=True)
 
-    assert len(ds_server) == 0, "Invalid server data store length"
+    assert len(ds_trainer1) == 0, "Invalid server data store length"
     assert "table1" in server.store_names(), "Invalid table names in server"
 
     time.sleep(1)  # Give it a moment to start
 
-    # 2. Set up Trainer Client
-    ds_client = helper_create_data_store(CLIENT_CAPACITY)
-    ds_client2 = helper_create_data_store(CLIENT_CAPACITY)
+    # 2. Set up Trainer Client with 2 data stores
+    ds_actor1 = helper_create_data_store(CLIENT_CAPACITY)
+    ds_actor2 = helper_create_data_store(CLIENT_CAPACITY)
+    ds_actor2 = helper_create_data_store(CLIENT_CAPACITY)
     client = TrainerClient(
         'table1',
         '127.0.0.1',
         trainer_config,
-        # data_store=ds_client,
-        data_stores={"table1": ds_client, "table2": ds_client2},
+        # data_store=ds_actor1,
+        data_stores={"table1": ds_actor1, "table2": ds_actor2},
     )
     client.recv_network_callback(_network_received_callback)
 
     data_point1 = np.array([1, 2, 3])
-    insert_helper(ds_client, data_point1)
-    assert len(ds_client) == 1, "Invalid client data store length"
+    insert_helper(ds_actor1, data_point1)
+    assert len(ds_actor1) == 1, "Invalid client data store length"
 
     # 3. Client update the server
-    insert_helper(ds_client, np.array([4, 5, 6]))
+    insert_helper(ds_actor1, np.array([4, 5, 6]))
 
     res = client.update()
     assert res, "Client update failed"
     assert res['success'], "Client update failed"
-    assert len(ds_client) == 2, "Invalid client data store length"
+    assert len(ds_actor1) == 2, "Invalid client data store length"
     time.sleep(1)  # Give it a moment to send
 
-    assert len(ds_server) == 2, f"Invalid server data store length {len(ds_server)}"
+    assert len(ds_trainer1) == 2, f"Invalid server data store length {len(ds_trainer1)}"
 
     # 4 More tests on insertions and queues
-    insert_helper(ds_client, np.array([7, 8, 9]))
+    insert_helper(ds_actor1, np.array([7, 8, 9]))
+    insert_helper(ds_actor2, np.array([30, 31, 32]))
+    insert_helper(ds_actor2, np.array([30, 31, 32]))
 
-    assert len(ds_server) == 2
-    client.update()  # assume client update is successful
-    assert len(ds_server) == 3
+    assert len(ds_trainer1) == 2
+    assert len(ds_trainer2) == 0
+    res = client.update()  # assume client update is successful
+    assert res is not None
+    assert len(ds_trainer1) == 3
+    assert len(ds_trainer2) == 2
 
-    insert_helper(ds_client, np.array([10, 11, 12]))
-    insert_helper(ds_client2, np.array([30, 31, 32]))
-    assert len(ds_client) == CLIENT_CAPACITY
-    assert len(ds_server2) == 0
-    client.update() # explicitly call update
-    assert len(ds_server) == 4
-    assert len(ds_server2) == 1
+    insert_helper(ds_actor1, np.array([10, 11, 12]))
+    assert len(ds_actor1) == CLIENT_CAPACITY
+    res = client.update()  # explicitly call update
+    assert res is not None
+    assert len(ds_trainer1) == 4
+    assert len(ds_trainer2) == 2
 
     # 5. Custom get stats request
     response = client.request("get-stats", {})
@@ -164,10 +169,10 @@ def test_trainer():
 
     # 6. start a async update operation
     client.start_async_update(interval=0.5)
-    insert_helper(ds_client, np.array([13, 14, 15]))
-    latest_data_id = ds_client.latest_data_id()
+    insert_helper(ds_actor1, np.array([13, 14, 15]))
+    latest_data_id = ds_actor1.latest_data_id()
     time.sleep(1)
-    assert ds_server.latest_data_id() == latest_data_id, "Async update failed"
+    assert ds_trainer1.latest_data_id() == latest_data_id, "Async update failed"
 
     # 7. Server publishes weights (for this test, just echo the training data)
     network = np.array([100, 200, 300, 400])

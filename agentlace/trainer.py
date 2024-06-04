@@ -156,7 +156,7 @@ class TrainerClient:
             :param server_ip: IP address of the server
             :param config: Config object
             :param data_store: Datastore to store the data (deprecated soon)
-            :param data_stores: Map of data stores
+            :param data_stores: Map of data stores (str id -> DataStoreBase)
             :param log_level: Logging level
             :param wait_for_server: Whether to wait for the server to start
 
@@ -175,7 +175,7 @@ class TrainerClient:
         self.last_request_time = 0
         self.log_level = log_level
 
-        # for multiple data stores
+        # Supporting multiple data stores
         self.data_stores_map = data_stores  # dict of str -> DataStoreBase
         self.last_sync_data_id_map = {name: -1 for name in self.data_stores_map.keys()}
 
@@ -211,6 +211,7 @@ class TrainerClient:
         This will explicity trigger an update to the data store
             :return Response from the trainer, return None if timeout
         """
+        # if single data store is used
         if self.data_store is not None:
             latest_id = self.data_store.latest_data_id()
             batch_data = self.data_store.get_latest_data(self.last_sync_data_id)
@@ -222,19 +223,25 @@ class TrainerClient:
             return res
 
         # if multiple data stores is used
-        # TODO (YL): robust test this feature
+        # TODO (YL): experimental feature, need robust testing
         elif self.data_stores_map:
-            res = {}
+            res = None
             for name, data_store in self.data_stores_map.items():
                 _latest_id = data_store.latest_data_id()
                 _last_sync_id = self.last_sync_data_id_map[name]
                 batch_data = data_store.get_latest_data(_last_sync_id)
-                res = self._update_ds(name, {"data": batch_data})
+
+                # if no new inserted data since last sync, skip the update
+                if len(batch_data) == 0:
+                    res = {"success": True}
+                else:
+                    res = self._update_ds(name, {"data": batch_data})
+
                 if res and res["success"]:
                     self.last_sync_data_id_map[name] = _latest_id
                 else:
                     # return failed response if any of the data store fails
-                    logging.warning("Failed to update data")
+                    logging.warning(f"Failed to update datastore: {name}")
                     return res
             return res  # return the last response
         return None
