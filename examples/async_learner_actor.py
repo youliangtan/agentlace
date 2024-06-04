@@ -19,7 +19,7 @@ from jaxrl_m.agents.continuous.sac import SACAgent
 from jaxrl_m.common.evaluation import evaluate
 from jaxrl_m.utils.timer_utils import Timer
 
-from agentlace.trainer import TrainerServer, TrainerClient, TrainerTunnel
+from agentlace.trainer import TrainerServer, TrainerClient, TrainerSMInterface
 from agentlace.data.data_store import QueuedDataStore
 from agentlace.data.jaxrl_data_store import ReplayBufferDataStore
 from agentlace.data.jaxrl_data_store import make_default_trajectory_buffer
@@ -72,13 +72,13 @@ def print_yellow(x): return print("\033[93m {}\033[00m" .format(x))
 global_rlds_logger = None
 
 
-def actor(agent: SACAgent, data_store, env, sampling_rng, tunnel=None):
+def actor(agent: SACAgent, data_store, env, sampling_rng, sm_trainer=None):
     """
     This is the actor loop, which runs when "--actor" is set to True.
-    NOTE: tunnel is used the transport layer for multi-threading
+    NOTE: sm_trainer is used the transport layer for multi-threading
     """
-    if tunnel:
-        client = tunnel
+    if sm_trainer:
+        client = sm_trainer
     else:
         client = TrainerClient(
             "actor_env",
@@ -176,10 +176,10 @@ def actor(agent: SACAgent, data_store, env, sampling_rng, tunnel=None):
 ##############################################################################
 
 
-def learner(agent, replay_buffer, wandb_logger=None, tunnel=None, sharding=None):
+def learner(agent, replay_buffer, wandb_logger=None, sm_trainer=None, sharding=None):
     """
     The learner loop, which runs when "--learner" is set to True.
-    NOTE: tunnel is used the transport layer for multi-threading
+    NOTE: sm_trainer is used the transport layer for multi-threading
     """
     # To track the step in the training loop
     update_steps = 0
@@ -192,9 +192,9 @@ def learner(agent, replay_buffer, wandb_logger=None, tunnel=None, sharding=None)
         return {}  # not expecting a response
 
     # Create server
-    if tunnel:
-        tunnel.register_request_callback(stats_callback)
-        server = tunnel
+    if sm_trainer:
+        sm_trainer.register_request_callback(stats_callback)
+        server = sm_trainer
     else:
         server = TrainerServer(make_trainer_config(), request_callback=stats_callback)
         server.register_data_store("actor_env", replay_buffer)
@@ -330,29 +330,29 @@ def main(_):
 
         # actor loop
         print_green("starting actor loop")
-        actor(agent, data_store, env, sampling_rng, tunnel=None)
+        actor(agent, data_store, env, sampling_rng, sm_trainer=None)
 
     else:
         print_green("starting actor and learner loop with multi-threading")
 
-        # In this example, the tunnel acts as the transport layer for the
+        # Here, the shared-memory interface acts as the transport layer for the
         # trainerServer and trainerClient. Also, both actor and learner shares
         # the same replay buffer.
         replay_buffer, wandb_logger = create_datastore_and_wandb_logger(env)
 
-        tunnel = TrainerTunnel()
+        sm_trainer = TrainerSMInterface()
         sampling_rng = jax.device_put(sampling_rng, sharding.replicate())
 
         import threading
         # Start learner thread
         learner_thread = threading.Thread(
             target=learner,
-            args=(agent, replay_buffer, wandb_logger, tunnel, sharding)
+            args=(agent, replay_buffer, wandb_logger, sm_trainer, sharding)
         )
         learner_thread.start()
 
         # Start actor in main process
-        actor(agent, replay_buffer, env, sampling_rng, tunnel=tunnel)
+        actor(agent, replay_buffer, env, sampling_rng, sm_trainer=sm_trainer)
         learner_thread.join()
 
 
