@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from agentlace.data.tfds import make_datastore
+from agentlace.data.tfds import make_datastore, populate_datastore
 from agentlace.data.jaxrl_data_store import ReplayBufferDataStore
 from agentlace.data.jaxrl_data_store import make_default_trajectory_buffer
 
@@ -44,8 +44,10 @@ class CustomEnv(gym.Env):
         return observation, {}
 
 
-def run_rlds_logger(env, capacity=20, type="replay_buffer"):
-    log_dir = "logs/test_rlds_env"
+def run_rlds_logger(env,
+                    capacity=20,
+                    log_dir = "logs/test_rlds_env",
+                    type="replay_buffer"):
 
     logger = RLDSLogger(
         observation_space=env.observation_space,
@@ -73,17 +75,19 @@ def run_rlds_logger(env, capacity=20, type="replay_buffer"):
     # create some fake data
     sample_obs = env.reset()[0]
     action_shape = env.action_space.shape
-    sample_action = np.random.randn(*action_shape)
+
+    TOTAL_EPISODES = 10
+    STEPS_PER_EPISODE = 15
 
     print("inserting data")
-    for j in range(10):  # 10 episodes
-        for i in range(15): # arbitrary number of 15 samples
+    for j in range(TOTAL_EPISODES):
+        for i in range(STEPS_PER_EPISODE):
             done = 0 if i < 14 else 1 # last sample is terminal
     
             sample = dict(
                 observations=sample_obs,
                 next_observations=sample_obs,
-                actions=sample_action,
+                actions=np.random.randn(*action_shape),
                 rewards=np.random.randn(),
                 masks=1 - done, # 1 is transition, 0 is terminal
             )
@@ -93,25 +97,32 @@ def run_rlds_logger(env, capacity=20, type="replay_buffer"):
 
             data_store.insert(sample)
     logger.close()
-    print("done inserting data")
 
     # check if log dir has more than 3 files
     files = os.listdir(log_dir)
     assert len(files) == 4, "expected 2 tfrecord files, and 2 json config files"
-    
-    # This will 
+
+    # check if the data is stored correctly
+    total_idx_sum = 0
+    def data_transform(data, metadata):
+        nonlocal total_idx_sum
+        total_idx_sum += metadata["step"]
+        return data
+
+    # This will create a new datastore with the same log_dir to do a sanity check
     stored_buffer = make_datastore(
         log_dir,
         capacity=200,
         type=type,
+        data_transform=data_transform,
     )
-
     print("total data size: ", len(stored_buffer))
-    assert len(stored_buffer) == 15*10 - 10 # first 10 samples are ignored since 
+    expected_total_idx_sum = list(range(STEPS_PER_EPISODE))*TOTAL_EPISODES
+    assert sum(expected_total_idx_sum) == total_idx_sum
+    assert len(stored_buffer) == STEPS_PER_EPISODE * TOTAL_EPISODES
 
 
 if __name__ == "__main__":
-    # print(" testing custom env")
     env = CustomEnv()
     run_rlds_logger(env)
 

@@ -131,10 +131,6 @@ class TrajectoryBuffer:
                 end_of_trajectory=False,                            # is last
             )
         """
-        end_of_trajectory = data.pop(
-            "end_of_trajectory", end_of_trajectory
-        )  # TODO: if not exist, assume False
-
         # Grab the metadata of the sample we're overwriting
         real_insert_idx = self._insert_idx % self.capacity
         overwritten_ep_end = self.metadata["ep_end"][real_insert_idx]
