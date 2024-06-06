@@ -116,11 +116,7 @@ def populate_datastore(
         return data_transform(data, metadata)
 
     # Iterate over episodes in the dataset
-<<<<<<< HEAD
-    reward, terminate, truncate = None, None, None
-=======
     prev_step = None
->>>>>>> main
     for episode in dataset:
         steps = episode['steps']
         obs = None
@@ -129,17 +125,6 @@ def populate_datastore(
         # Iterate through steps in the episode
         for i, step in enumerate(steps):
             if i == 0:
-<<<<<<< HEAD
-                obs = get_value_from_tensor(step['observation'])
-                action = get_value_from_tensor(step['action'])
-                reward = step.get('reward', 0.).numpy() # default 0 if 'reward' key is missing
-                terminate = step['is_terminal'].numpy()  # or is_last
-                truncate = step['is_last'].numpy() # truncate is not avail in the ReplayBuffer
-                continue
-
-            # extract data from the step to insert into the datastore
-            next_obs = get_value_from_tensor(step['observation'])
-=======
                 prev_step = step
                 continue
 
@@ -151,7 +136,6 @@ def populate_datastore(
             truncate = prev_step['is_last'].numpy() # truncate is not avail in the ReplayBuffer
             next_obs = get_value_from_tensor(step['observation'])  # NOTE: use curr step
 
->>>>>>> main
             data = dict(
                 observations=obs,
                 next_observations=next_obs,
@@ -164,34 +148,9 @@ def populate_datastore(
             elif type == "with_dones":
                 data["dones"] = terminate or truncate
 
-<<<<<<< HEAD
-            action = get_value_from_tensor(step['action'])
-            reward = step.get('reward', 0.).numpy() # default 0 if 'reward' key is missing
-            terminate = step['is_terminal'].numpy()  # or is_last
-            truncate = step['is_last'].numpy() # truncate is not avail in the ReplayBuffer
-
-            # TODO: check if terminate and truncate are recorded in the final
-            # data inserted into the datastore
-            if terminate or truncate:
-                pass
-
-            # Transform the data if user provided a data_transform function
-            # NOTE: the arg data is a dict of the data inserted into the datastore
-            # and the metadata is a dict of the metadata extracted from the step
-            # which are not part of data
-            if data_transform is not None:
-                metadata = dict(
-                    step=i, # -1 # TODO
-                    step_size=_step_size,
-                )
-                for key in metadata_keys:
-                    metadata[key] = get_value_from_tensor(step[key])
-                data = data_transform(data, metadata)
-=======
             # intermediate step in RLDS shouldn't be terminal or truncate
             if terminate or truncate:
                 warnings.warn("Intermediate step should not be terminal or truncate")
->>>>>>> main
 
             data = handle_custom_data_transform(data, prev_step, _step_size, i-1)
 
@@ -228,13 +187,6 @@ def populate_datastore(
             if data is not None:
                 datastore.insert(data)
 
-<<<<<<< HEAD
-            # print("data: ", data['actions'], data['rewards'], data['masks'], data['dones'])
-            # Insert data into the replay buffer
-            datastore.insert(data)
-            obs = next_obs
-=======
->>>>>>> main
     return datastore
 
 ##############################################################################
