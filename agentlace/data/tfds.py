@@ -5,6 +5,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from typing import Dict, Optional, Callable
+import warnings
 
 from agentlace.data.data_store import DataStoreBase
 
@@ -148,8 +149,8 @@ def populate_datastore(
                 data["dones"] = terminate or truncate
 
             # intermediate step in RLDS shouldn't be terminal or truncate
-            assert not terminate, "intermediate step should not be terminal"
-            assert not truncate, "intermediate step should not be truncate"
+            if terminate or truncate:
+                warnings.warn("Intermediate step should not be terminal or truncate")
 
             data = handle_custom_data_transform(data, prev_step, _step_size, i-1)
 
@@ -176,7 +177,9 @@ def populate_datastore(
                 data["end_of_trajectory"] = terminate or truncate
             elif type == "with_dones":
                 data["dones"] = terminate or truncate
-            assert terminate or truncate, "last step should be terminal or truncate"
+
+            if not terminate and not truncate:
+                warnings.warn("Last step should be terminal or truncate")
 
             data = handle_custom_data_transform(data, prev_step, _step_size, _step_size-1)
 
