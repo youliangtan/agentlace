@@ -80,7 +80,7 @@ class TrainerServer:
 
         def __callback_impl(data: dict) -> dict:
             _type, _payload = data.get("type"), data.get("payload")
-            if _type == "data":
+            if _type == "datastore":
                 store_name = data.get("store_name")
                 if store_name not in self.data_stores:
                     return {"success": False, "message": "Invalid table name"}
@@ -215,7 +215,8 @@ class TrainerClient:
         if self.data_store is not None:
             latest_id = self.data_store.latest_data_id()
             batch_data = self.data_store.get_latest_data(self.last_sync_data_id)
-            res = self._update_ds(self.client_name, {"data": batch_data})
+            data_dict = {"data": batch_data, "from_id": self.last_sync_data_id}
+            res = self._update_ds(self.client_name, data_dict)
             if res and res["success"]:
                 self.last_sync_data_id = latest_id
             else:
@@ -235,8 +236,7 @@ class TrainerClient:
                 if len(batch_data) == 0:
                     res = {"success": True}
                 else:
-                    res = self._update_ds(name, {"data": batch_data})
-
+                    res = self._update_ds(name, {"data": batch_data, "from_id": _last_sync_id})
                 if res and res["success"]:
                     self.last_sync_data_id_map[name] = _latest_id
                 else:
@@ -253,7 +253,7 @@ class TrainerClient:
             :param data: Payload to send to the trainer
             :return: Response from the trainer, return None if timeout
         """
-        msg = {"type": "data", "store_name": name, "payload": data}
+        msg = {"type": "datastore", "store_name": name, "payload": data}
         if self.config.rate_limit and \
                 time.time() - self.last_request_time < 1 / self.config.rate_limit:
             logging.warning("Rate limit exceeded")
