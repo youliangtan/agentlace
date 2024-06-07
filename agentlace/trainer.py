@@ -149,7 +149,9 @@ class TrainerClient:
                  data_store: DataStoreBase = None,
                  data_stores: Dict[str, DataStoreBase] = {},
                  log_level=logging.INFO,
-                 wait_for_server: bool = False):
+                 wait_for_server: bool = False,
+                 timeout_ms: float = 800,
+):
         """
         Args:
             :param name: Name of the client
@@ -165,7 +167,7 @@ class TrainerClient:
             multiple data stores in single client, use `data_stores_map` instead.
         """
         self.client_name = name
-        self.req_rep_client = ReqRepClient(server_ip, config.port_number, log_level=log_level)
+        self.req_rep_client = ReqRepClient(server_ip, config.port_number, log_level=log_level, timeout_ms=timeout_ms)
         self.server_ip = server_ip
         self.config = config
         self.request_types = set(config.request_types)  # faster lookup

@@ -127,7 +127,7 @@ class ReqRepClient:
                 return self.decompress(message)
             except Exception as e:
                 # accepts timeout exception
-                logging.warning(f"Failed to send message: {e}")
+                logging.warning(f"Failed to send message: {e}, potential timeout")
                 logging.debug("WARNING: No res from server. reset socket.")
                 self.reset_socket()
                 return None
