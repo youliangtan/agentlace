@@ -11,19 +11,21 @@ from threading import Lock
 
 ##############################################################################
 
+
 class CallbackProtocol(Protocol):
     def __call__(self, message: Dict) -> Dict:
         ...
 
+
 class ReqRepServer:
     def __init__(self,
                  port=5556,
-                 impl_callback: Optional[CallbackProtocol]=None,
+                 impl_callback: Optional[CallbackProtocol] = None,
                  log_level=logging.DEBUG,
                  compression: str = 'lz4'):
         """
         Request reply server
-        """        
+        """
         self.impl_callback = impl_callback
         self.compress, self.decompress = make_compression_method(compression)
         self.port = port
@@ -64,6 +66,8 @@ class ReqRepServer:
         self.is_kill = True
         self.socket.close()
         self.context.term()
+        del self.socket
+        del self.context
 
     def reset(self):
         self.context = zmq.Context()
@@ -83,8 +87,8 @@ class ReqRepClient:
     def __init__(self,
                  ip: str,
                  port=5556,
-                 timeout_ms = 800,
-                 log_level=logging.DEBUG, 
+                 timeout_ms=800,
+                 log_level=logging.DEBUG,
                  compression: str = 'lz4'):
         """
         :param ip: IP address of the server
@@ -127,10 +131,16 @@ class ReqRepClient:
                 return self.decompress(message)
             except Exception as e:
                 # accepts timeout exception
-                logging.warning(f"Failed to send message: {e}")
-                logging.debug("WARNING: No res from server. reset socket.")
+                logging.warning(
+                    f"Failed to send message to {self.ip}:{self.port}: {e}, potential timeout")
+                logging.debug(f"WARNING: No res from server. reset socket.")
                 self.reset_socket()
                 return None
+
+    def __del__(self):
+        if self.socket:
+            self.socket.close()
+        self.context.term()
 
 
 ##############################################################################

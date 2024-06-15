@@ -140,7 +140,8 @@ def test_trainer():
     assert len(ds_actor1) == 2, "Invalid client data store length"
     time.sleep(1)  # Give it a moment to send
 
-    assert len(ds_trainer1) == 2, f"Invalid server data store length {len(ds_trainer1)}"
+    assert len(
+        ds_trainer1) == 2, f"Invalid server data store length {len(ds_trainer1)}"
 
     # 4 More tests on insertions and queues
     insert_helper(ds_actor1, np.array([7, 8, 9]))
@@ -192,7 +193,64 @@ def test_trainer():
     print("[test_trainer] All tests passed!\n")
 
 
+def stress_test_trainer():
+    # 1. Set up Trainer Server
+    trainer_config = TrainerConfig(
+        port_number=5567,
+        broadcast_port=5568,
+    )
+    server = TrainerServer(trainer_config, new_data_callback, request_callback)
+    ds_learner = helper_create_data_store(100000)
+    server.register_data_store("table1", ds_learner)
+    server.start(threaded=True)
+
+    time.sleep(1)  # Give it a moment to start
+
+    # 2. Set up Trainer Client with single
+    ds_actor = helper_create_data_store(100000)
+
+    curr_timeout = 5
+    client = TrainerClient(
+        'table1',
+        '127.0.0.1',
+        trainer_config,
+        data_store=ds_actor,
+        # data_stores={"table1": ds_actor},
+        timeout_ms=curr_timeout,  # explicitly set a low timeout
+    )
+    print("Start trainer stress test")
+
+    # 3. Stress test
+    for i in range(1000):
+        insert_helper(ds_actor, np.array([i]*300))
+
+        if (i + 1) % 100 == 0:
+            res = client.update()
+            print(
+                f" Data store length in actor vs learner: {len(ds_actor)} vs {len(ds_learner)}")
+
+            assert len(ds_learner) <= len(ds_actor), \
+                "Data store in learner should be smaller than actor even when there's msg drop"
+
+            # runtime reconfig client timeout
+            # Slowly increase the timeout to avoid dropping messages
+            curr_timeout += 8
+            client.req_rep_client.timeout_ms = curr_timeout
+            client.req_rep_client.reset_socket()
+
+        time.sleep(0.01)
+
+    assert len(ds_actor) == len(
+        ds_learner), "both data store should have the same length"
+    client.stop()
+    server.stop()
+    del client
+    del server
+    print("[stress_test_trainer] All tests passed!\n")
+
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     test_queued_data_store()
     test_trainer()
+    stress_test_trainer()
