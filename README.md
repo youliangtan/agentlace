@@ -119,7 +119,7 @@ C[Client 2] -- "call()" --> B
 
 ## Example Usage
 
-> For more examples, please refer to the test scripts in `agentlace/tests/` and `examples`.
+> For more examples, please refer to the test scripts in `tests/` and `examples/`.
 
 1. **A RL Env as Action Server**
 
@@ -246,16 +246,16 @@ res = client.call("voice_reg", {"audio": "serialized_audio"})
 - Run test cases to make sure everything is working as expected.
 
 ```bash
-python3 agentlace/tests/test_action.py
-python3 agentlace/tests/test_inference.py
-python3 agentlace/tests/test_trainer.py
-python3 agentlace/tests/test_tfds.py
+python3 tests/test_action.py
+python3 tests/test_inference.py
+python3 tests/test_trainer.py
+python3 tests/test_tfds.py
 
 # Run all tests
-python3 agentlace/tests/test_all.py
+python3 tests/test_all.py
 
 # Run specific test
-pytest-3 agentlace/tests/test_data_store.py
+pytest-3 tests/test_data_store.py
 ```
 
 - The current implementation mainly uses zeromq as communication protocol, it should be easy to extend it to support other protocols such as grpc. (TODO: impl abstract function when there is a need)

@@ -207,8 +207,6 @@ class TrainerClient:
 
         # Supporting multiple data stores
         self.data_stores_map = data_stores  # dict of str -> DataStoreBase
-        self.last_sync_data_id_map = {
-            name: -1 for name in self.data_stores_map.keys()}
 
         logging.basicConfig(level=log_level)
         res = self.req_rep_client.send_msg({"type": "hash"})
@@ -237,28 +235,19 @@ class TrainerClient:
         logging.debug(
             f"Initiated trainer client at {server_ip}:{config.port_number}")
 
-    def update(self, from_id=None) -> Optional[dict]:
+    def update(self) -> Optional[dict]:
         """
         This will explicity trigger an update to the data store
+        Args:
             :return Response from the trainer, return None if timeout
         """
         # if single data store is used
         if self.data_store is not None:
-
+            from_id = self._get_server_last_update_id(self.client_name)
             if from_id is None:
-                client_latest_id = self.data_store.latest_data_id()
-                # get the current id of the datastore
-                # latest_id = self.last_sync_data_id
-                msg = {"type": "get_last_update_id",
-                       "payload": {"store_name": self.client_name}}
-                res = self.req_rep_client.send_msg(msg)
-                if res is None or not res["success"]:
-                    logging.warning("Failed to get last update id")
-                    return res
+                return None
 
-                # server latest id
-                from_id = res["payload"]
-
+            client_latest_id = self.data_store.latest_data_id()
             batch_data = self.data_store.get_latest_data(from_id)
             data_dict = {"data": batch_data, "last_id": client_latest_id}
             res = self._update_ds(self.client_name, data_dict)
@@ -269,30 +258,80 @@ class TrainerClient:
 
         # if multiple data stores is used
         # TODO (YL): experimental feature, need robust testing
-        # TODO (YL): need to support smart syncing in multiple data stores setup
         elif self.data_stores_map:
             res = None
             for name, data_store in self.data_stores_map.items():
 
-                _latest_id = data_store.latest_data_id()
-                _last_sync_id = self.last_sync_data_id_map[name]
-                batch_data = data_store.get_latest_data(_last_sync_id)
+                from_id = self._get_server_last_update_id(name)
+                if from_id is None:
+                    return None
+
+                client_latest_id = data_store.latest_data_id()
+                batch_data = data_store.get_latest_data(from_id)
 
                 # if no new inserted data since last sync, skip the update
                 if len(batch_data) == 0:
                     res = {"success": True}
                 else:
                     res = self._update_ds(
-                        name, {"data": batch_data, "last_id": _last_sync_id})
+                        name, {"data": batch_data, "last_id": client_latest_id})
 
-                if res and res["success"]:
-                    self.last_sync_data_id_map[name] = _latest_id
-                else:
-                    # return failed response if any of the data store fails
+                if res is None or not res["success"]:
                     logging.warning(f"Failed to update datastore: {name}")
-                    return res
-            return res  # return the last response
+
+            return {"success": True}  # default return success
         return None
+
+    def update_datastore(
+        self,
+        name: str,
+        from_id: int,
+        confirm_update=False
+    ) -> bool:
+        """
+        This provide the api for user to explicitly update the data store
+        with the server, with the option to confirm the update, and update
+        all batch data from "from_id" to the latest data id.
+        """
+        # for backward compatibility
+        if self.data_store is not None:
+            _data_store = self.data_store
+        elif self.data_stores_map:
+            _data_store = self.data_stores_map.get(name)
+            if _data_store is None:
+                logging.error(f"Datastore {name} not found")
+                return False
+        else:
+            logging.error("Datastore not defined")
+            return False
+
+        client_latest_id = _data_store.latest_data_id()
+        batch_data = _data_store.get_latest_data(from_id)
+        if len(batch_data) == 0:
+            return True
+
+        data_dict = {"data": batch_data, "last_id": client_latest_id}
+        res = self._update_ds(self.client_name, data_dict)
+
+        # with confirm_update, check if the server has updated the data store
+        if confirm_update:
+            server_last_id = self._get_server_last_update_id(name)
+            if server_last_id is None:
+                return False
+            return True if server_last_id == client_latest_id else False
+
+        if res is None or not res["success"]:
+            logging.warning("Failed to update server datastore (maybe)")
+            return True
+
+    def _get_server_last_update_id(self, name: str) -> Optional[int]:
+        """Get the last update id of the server's data store"""
+        msg = {"type": "get_last_update_id", "payload": {"store_name": name}}
+        res = self.req_rep_client.send_msg(msg)
+        if res is None or not res["success"]:
+            logging.warning("Failed to get last update id")
+            return None
+        return res["payload"]
 
     def _update_ds(self, name: str, data: dict) -> Optional[dict]:
         """
