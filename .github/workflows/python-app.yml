@@ -41,5 +41,5 @@ jobs:
     # Run the specified tests
     - name: Test with pytest
       run: |
-        python3 agentlace/tests/test_all.py
+        python3 tests/test_all.py
       # pytest agentlace/tests/test_replay_buffer.py # minimal install doesn't require jax

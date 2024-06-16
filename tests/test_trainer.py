@@ -136,11 +136,11 @@ def test_trainer():
 
     res = client.update()
     assert res, "Client update failed"
-    assert res['success'], "Client update failed"
     assert len(ds_actor1) == 2, "Invalid client data store length"
     time.sleep(1)  # Give it a moment to send
 
-    assert len(ds_trainer1) == 2, f"Invalid server data store length {len(ds_trainer1)}"
+    assert len(
+        ds_trainer1) == 2, f"Invalid server data store length {len(ds_trainer1)}"
 
     # 4 More tests on insertions and queues
     insert_helper(ds_actor1, np.array([7, 8, 9]))
@@ -149,8 +149,8 @@ def test_trainer():
 
     assert len(ds_trainer1) == 2
     assert len(ds_trainer2) == 0
-    res = client.update()  # assume client update is successful
-    assert res is not None
+    res = client.update()
+    assert res, "Client update failed"
     assert len(ds_trainer1) == 3
     assert len(ds_trainer2) == 2
 
@@ -192,7 +192,72 @@ def test_trainer():
     print("[test_trainer] All tests passed!\n")
 
 
+def stress_test_trainer():
+    # 1. Set up Trainer Server
+    trainer_config = TrainerConfig(
+        port_number=5567,
+        broadcast_port=5568,
+    )
+    server = TrainerServer(trainer_config, new_data_callback, request_callback)
+    ds_learner1 = helper_create_data_store(100000)
+    ds_learner2 = helper_create_data_store(100000)
+    server.register_data_store("table1", ds_learner1)
+    server.register_data_store("table2", ds_learner2)
+    server.start(threaded=True)
+
+    time.sleep(1)  # Give it a moment to start
+
+    # 2. Set up Trainer Client with single
+    ds_actor1 = helper_create_data_store(100000)
+    ds_actor2 = helper_create_data_store(100000)
+
+    curr_timeout = 5
+    client = TrainerClient(
+        'table1',
+        '127.0.0.1',
+        trainer_config,
+        # data_store=ds_actor1,
+        data_stores={"table1": ds_actor1, "table2": ds_actor2},
+        timeout_ms=curr_timeout,  # explicitly set a low timeout
+    )
+    print("Start trainer stress test")
+
+    # 3. Stress test
+    for i in range(1000):
+        insert_helper(ds_actor1, np.array([i]*300))
+        insert_helper(ds_actor2, np.array([i]*100))
+
+        if (i + 1) % 100 == 0:
+            res = client.update()
+            print(
+                f" Data store 1 length in actor vs learner: {len(ds_actor1)} vs {len(ds_learner1)}")
+            print(
+                f" Data store 2 length in actor vs learner: {len(ds_actor2)} vs {len(ds_learner2)}")
+
+            assert len(ds_learner1) <= len(ds_actor1), \
+                "Data store in learner should be smaller than actor even when there's msg drop"
+            assert len(ds_learner2) <= len(ds_actor2), \
+                "Data store in learner should be smaller than actor even when there's msg drop"
+
+            # runtime reconfig client timeout
+            # Slowly increase the timeout to simulate improving network conditions
+            curr_timeout += 8
+            client.req_rep_client.timeout_ms = curr_timeout
+            client.req_rep_client.reset_socket()
+
+        time.sleep(0.01)
+
+    assert len(ds_actor1) == len(ds_learner1), "both ds should have the same length"
+    assert len(ds_actor2) == len(ds_learner2), "both ds should have the same length"
+    client.stop()
+    server.stop()
+    del client
+    del server
+    print("[stress_test_trainer] All tests passed!\n")
+
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     test_queued_data_store()
     test_trainer()
+    stress_test_trainer()
