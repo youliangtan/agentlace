@@ -32,7 +32,7 @@ class TrainerConfig():
     broadcast_port: int = 5556
     request_types: List[str] = field(default_factory=list)
     rate_limit: Optional[int] = None
-    version: str = "0.0.1"
+    version: str = "0.0.2"
 
 
 class DataCallback(Protocol):
@@ -75,7 +75,7 @@ class TrainerServer:
         """
         self.queue = deque()  # FIFO queue
         self.request_types = set(config.request_types)  # faster lookup
-        self.data_stores = {}
+        self.data_stores = {} # map of {ds_name: DataStoreBase}
         self.last_update_id_map = {}  # map of {ds_name: last_update_id}
         self.config = config
 
@@ -91,7 +91,6 @@ class TrainerServer:
                 if store_name not in self.data_stores:
                     return {"success": False, "message": "Invalid datastore name"}
                 batch_data = _payload.get("data", [])
-                # print(f"Received data {len(batch_data)} data from {store_name}, with last_update_id: {last_update_id}")
                 self.data_stores[store_name].batch_insert(batch_data)
                 if data_callback:
                     data_callback(store_name, _payload)
