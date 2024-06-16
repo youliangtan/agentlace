@@ -230,68 +230,48 @@ class TrainerClient:
 
         # First update the server's datastore
         res = self.update()
-        if res is None or not res["success"]:
+        if not res:
             logging.error("Failed to update server's data store, do check!")
         logging.debug(
             f"Initiated trainer client at {server_ip}:{config.port_number}")
 
-    def update(self) -> Optional[dict]:
+    def update(self) -> bool:
         """
         This will explicity trigger an update to the data store
         Args:
-            :return Response from the trainer, return None if timeout
+            :return True if the update is successful, False otherwise
         """
         # if single data store is used
         if self.data_store is not None:
-            from_id = self._get_server_last_update_id(self.client_name)
+            from_id = self.get_server_last_update_id(self.client_name)
             if from_id is None:
                 return None
-
-            client_latest_id = self.data_store.latest_data_id()
-            batch_data = self.data_store.get_latest_data(from_id)
-            data_dict = {"data": batch_data, "last_id": client_latest_id}
-            res = self._update_ds(self.client_name, data_dict)
-
-            if res is None or not res["success"]:
-                logging.warning("Failed to update server datastore (maybe)")
-            return res
+            return self.update_datastore(self.client_name, from_id)
 
         # if multiple data stores is used
-        # TODO (YL): experimental feature, need robust testing
         elif self.data_stores_map:
-            res = None
             for name, data_store in self.data_stores_map.items():
-
-                from_id = self._get_server_last_update_id(name)
+                from_id = self.get_server_last_update_id(name)
                 if from_id is None:
                     return None
-
-                client_latest_id = data_store.latest_data_id()
-                batch_data = data_store.get_latest_data(from_id)
-
-                # if no new inserted data since last sync, skip the update
-                if len(batch_data) == 0:
-                    res = {"success": True}
-                else:
-                    res = self._update_ds(
-                        name, {"data": batch_data, "last_id": client_latest_id})
-
-                if res is None or not res["success"]:
-                    logging.warning(f"Failed to update datastore: {name}")
-
-            return {"success": True}  # default return success
+                self.update_datastore(name, from_id)
+            return True
         return None
 
     def update_datastore(
         self,
         name: str,
         from_id: int,
-        confirm_update=False
+        confirm_update=False,
     ) -> bool:
         """
         This provide the api for user to explicitly update the data store
-        with the server, with the option to confirm the update, and update
-        all batch data from "from_id" to the latest data id.
+        with the server, with more options
+        Args:
+            :param name: Name of the data store
+            :param from_id: Last update id of the client
+            :param confirm_update: Whether to confirm the update with the server
+            :return: True if the update is successful, False otherwise
         """
         # for backward compatibility
         if self.data_store is not None:
@@ -311,11 +291,11 @@ class TrainerClient:
             return True
 
         data_dict = {"data": batch_data, "last_id": client_latest_id}
-        res = self._update_ds(self.client_name, data_dict)
+        res = self._update_ds(name, data_dict)
 
         # with confirm_update, check if the server has updated the data store
         if confirm_update:
-            server_last_id = self._get_server_last_update_id(name)
+            server_last_id = self.get_server_last_update_id(name)
             if server_last_id is None:
                 return False
             return True if server_last_id == client_latest_id else False
@@ -324,29 +304,19 @@ class TrainerClient:
             logging.warning("Failed to update server datastore (maybe)")
             return True
 
-    def _get_server_last_update_id(self, name: str) -> Optional[int]:
-        """Get the last update id of the server's data store"""
+    def get_server_last_update_id(self, name: str) -> Optional[int]:
+        """
+        Get the last update id of the server's data store
+        Args:
+            :param name: Name of the data store
+            :return: Last update id of the server's data store
+        """
         msg = {"type": "get_last_update_id", "payload": {"store_name": name}}
         res = self.req_rep_client.send_msg(msg)
         if res is None or not res["success"]:
             logging.warning("Failed to get last update id")
             return None
         return res["payload"]
-
-    def _update_ds(self, name: str, data: dict) -> Optional[dict]:
-        """
-        internal update method that will send the data to the server
-            :name Name of the data store
-            :param data: Payload to send to the trainer
-            :return: Response from the trainer, return None if timeout
-        """
-        msg = {"type": "datastore", "store_name": name, "payload": data}
-        if self.config.rate_limit and \
-                time.time() - self.last_request_time < 1 / self.config.rate_limit:
-            logging.warning("Rate limit exceeded")
-            return None
-        self.last_request_time = time.time()
-        return self.req_rep_client.send_msg(msg)
 
     def request(self, type: str, payload: dict) -> Optional[dict]:
         """
@@ -399,6 +369,21 @@ class TrainerClient:
             self.update_thread.join()
 
         logging.debug("Stopped trainer client")
+
+    def _update_ds(self, name: str, data: dict) -> Optional[dict]:
+        """
+        internal update method that will send the data to the server
+            :param name Name of the data store
+            :param data: Payload to send to the trainer
+            :return: Response from the trainer, return None if timeout
+        """
+        msg = {"type": "datastore", "store_name": name, "payload": data}
+        if self.config.rate_limit and \
+                time.time() - self.last_request_time < 1 / self.config.rate_limit:
+            logging.warning("Rate limit exceeded")
+            return None
+        self.last_request_time = time.time()
+        return self.req_rep_client.send_msg(msg)
 
 ##############################################################################
 

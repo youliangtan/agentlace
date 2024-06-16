@@ -136,7 +136,6 @@ def test_trainer():
 
     res = client.update()
     assert res, "Client update failed"
-    assert res['success'], "Client update failed"
     assert len(ds_actor1) == 2, "Invalid client data store length"
     time.sleep(1)  # Give it a moment to send
 
@@ -150,8 +149,8 @@ def test_trainer():
 
     assert len(ds_trainer1) == 2
     assert len(ds_trainer2) == 0
-    res = client.update()  # assume client update is successful
-    assert res is not None
+    res = client.update()
+    assert res, "Client update failed"
     assert len(ds_trainer1) == 3
     assert len(ds_trainer2) == 2
 
