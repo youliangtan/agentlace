@@ -201,7 +201,7 @@ def stress_test_trainer():
         # show that speed up from 0.06 to 0.005 sec in stress test
         # experimental_pipeline_url="tcp://127.0.0.1:5547",
     )
-    curr_timeout = 100
+    curr_timeout = 5
     server = TrainerServer(trainer_config, new_data_callback, request_callback)
     ds_learner1 = helper_create_data_store(100000)
     ds_learner2 = helper_create_data_store(100000)
