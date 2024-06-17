@@ -118,7 +118,7 @@ class ReqRepClient:
         self.socket.setsockopt(zmq.RCVTIMEO, self.timeout_ms)
         self.socket.connect(f"tcp://{self.ip}:{self.port}")
 
-    def send_msg(self, request: dict) -> Optional[str]:
+    def send_msg(self, request: dict, wait_for_response=True) -> Optional[str]:
         if self.socket is None or self.socket.closed:
             logging.debug("WARNING: Socket is closed, reseting...")
             return None
@@ -127,6 +127,8 @@ class ReqRepClient:
         with self._internal_lock:
             try:
                 self.socket.send(serialized)
+                if wait_for_response is False:
+                    return None
                 message = self.socket.recv()
                 return self.decompress(message)
             except Exception as e:

@@ -80,8 +80,6 @@ def test_queued_data_store():
     data_id_9 = ds.latest_data_id()
     ds.batch_insert([10, 11, 12, 13, 14, 15, 16, 17])
     assert ds._data_queue[-1] == 17
-    print(ds.latest_data_id(), data_id_9)
-#    assert ds.latest_data_id() - data_id_9 == 6
 
 
 def test_trainer():
@@ -99,6 +97,7 @@ def test_trainer():
         port_number=5555,
         broadcast_port=5556,
         request_types=["get-stats"],
+        # experimental_pipeline_url="tcp://127.0.0.1:5547",
     )
     server = TrainerServer(trainer_config, new_data_callback, request_callback)
 
@@ -151,6 +150,7 @@ def test_trainer():
     assert len(ds_trainer2) == 0
     res = client.update()
     assert res, "Client update failed"
+    time.sleep(1)  # Give it a moment to send
     assert len(ds_trainer1) == 3
     assert len(ds_trainer2) == 2
 
@@ -197,7 +197,11 @@ def stress_test_trainer():
     trainer_config = TrainerConfig(
         port_number=5567,
         broadcast_port=5568,
+        # NOTE: use pipe for faster datastore update
+        # show that speed up from 0.06 to 0.005 sec in stress test
+        # experimental_pipeline_url="tcp://127.0.0.1:5547",
     )
+    curr_timeout = 5
     server = TrainerServer(trainer_config, new_data_callback, request_callback)
     ds_learner1 = helper_create_data_store(100000)
     ds_learner2 = helper_create_data_store(100000)
@@ -211,7 +215,6 @@ def stress_test_trainer():
     ds_actor1 = helper_create_data_store(100000)
     ds_actor2 = helper_create_data_store(100000)
 
-    curr_timeout = 5
     client = TrainerClient(
         'table1',
         '127.0.0.1',
@@ -228,11 +231,11 @@ def stress_test_trainer():
         insert_helper(ds_actor2, np.array([i]*100))
 
         if (i + 1) % 100 == 0:
+            start_time = time.time()
             res = client.update()
-            print(
-                f" Data store 1 length in actor vs learner: {len(ds_actor1)} vs {len(ds_learner1)}")
-            print(
-                f" Data store 2 length in actor vs learner: {len(ds_actor2)} vs {len(ds_learner2)}")
+            print(f"Update time: {time.time() - start_time}")
+            print(f" Datastore 1 actor vs learner: {len(ds_actor1)} vs {len(ds_learner1)}")
+            print(f" Datastore 2 actor vs learner: {len(ds_actor2)} vs {len(ds_learner2)}")
 
             assert len(ds_learner1) <= len(ds_actor1), \
                 "Data store in learner should be smaller than actor even when there's msg drop"
@@ -247,6 +250,8 @@ def stress_test_trainer():
 
         time.sleep(0.01)
 
+    print(f"~Final~ DataStore 1 actor vs learner: {len(ds_actor1)} vs {len(ds_learner1)}")
+    print(f"~Final~ DataStore 2 actor vs learner: {len(ds_actor2)} vs {len(ds_learner2)}")
     assert len(ds_actor1) == len(ds_learner1), "both ds should have the same length"
     assert len(ds_actor2) == len(ds_learner2), "both ds should have the same length"
     client.stop()
