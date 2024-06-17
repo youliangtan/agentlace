@@ -18,16 +18,20 @@ from typing import Callable
 from agentlace.internal.utils import make_compression_method
 
 
-DEFAULT_PIPE_URL = "tcp://127.0.0.1:5547"
-
 ##############################################################################
 
 
 class Producer:
     """Message producer for pipe communication."""
 
-    def __init__(self, url=DEFAULT_PIPE_URL, compression: str = 'lz4'):
-        logging.debug("Initializing pipe producer with url: ", url)
+    def __init__(self,
+                 ip: str = "localhost", 
+                 port: int = 5547,
+                 compression: str = 'lz4'):
+        logging.debug(f"Initializing pipe consumer [{ip}:{port}]")
+        if ip == "localhost":
+            ip = "127.0.0.1"
+        url = f"tcp://{ip}:{port}"
         context = zmq.Context()
         self.zmq_socket = context.socket(zmq.PUSH)
         self.zmq_socket.connect(url)
@@ -43,10 +47,14 @@ class Producer:
 class Consumer:
     """Message consumer for pipe communication."""
 
-    def __init__(self, callback_fn: Callable, url=DEFAULT_PIPE_URL, compression: str = 'lz4'):
-        logging.debug("Initializing pipe consumer with url: ", url)
+    def __init__(self,
+                 callback_fn: Callable,
+                 port: int = 5547,
+                 compression: str = 'lz4'):
+        logging.debug(f"Initializing pipe consumer [localhost:{port}]")
         context = zmq.Context()
         self.results_receiver = context.socket(zmq.PULL)
+        url = f"tcp://*:{port}"
         self.results_receiver.bind(url)
         self.callback_fn = callback_fn
         self.compress, self.decompress = make_compression_method(compression)
@@ -88,14 +96,14 @@ if __name__ == "__main__":
             id = result["id"]
             print("received ", name, id)
 
-        consumer = Consumer(callback_fn, url="tcp://100.78.214.136:5547")
+        consumer = Consumer(callback_fn)
         consumer.async_start()
         time.sleep(20)
         print("Stopping consumer")
         consumer.stop()
 
     elif args.producer:
-        producer = Producer(url="tcp://127.0.0.1:5547")
+        producer = Producer()
         payload = np.zeros(100)
         for i in range(10):
             time.sleep(0.5)

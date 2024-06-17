@@ -34,7 +34,7 @@ class TrainerConfig():
     request_types: List[str] = field(default_factory=list)
     rate_limit: Optional[int] = None
     version: str = "0.0.2"
-    experimental_pipeline_url: Optional[str] = None
+    experimental_pipeline_port: Optional[str] = None
 
 
 class DataCallback(Protocol):
@@ -125,7 +125,7 @@ class TrainerServer:
             config.broadcast_port, log_level=log_level)
 
         # NOTE: experimental feature to use pipeline for data update
-        if config.experimental_pipeline_url:
+        if config.experimental_pipeline_port:
             def _pipe_callback_impl(data: Any):
                 # NOTE insert data to the data store similar as above
                 _payload = data.get("payload")
@@ -140,7 +140,7 @@ class TrainerServer:
                 self.last_update_id_map[store_name] = last_update_id
                 return
             self.consumer = Consumer(
-                _pipe_callback_impl, config.experimental_pipeline_url)
+                _pipe_callback_impl, config.experimental_pipeline_port)
             self.consumer.async_start()
 
         logging.basicConfig(level=log_level)
@@ -258,8 +258,11 @@ class TrainerClient:
                 "Please check the config of the server and client")
 
         # NOTE: experimental feature to use pipeline for data update
-        if config.experimental_pipeline_url:
-            self.producer = Producer(config.experimental_pipeline_url)
+        if config.experimental_pipeline_port:
+            self.producer = Producer(
+                ip=server_ip,
+                port=config.experimental_pipeline_port
+            )
 
         # First update the server's datastore
         res = self.update()
@@ -414,7 +417,7 @@ class TrainerClient:
         msg = {"type": "datastore", "store_name": name, "payload": data}
 
         # NOTE: experimental feature to use pipeline for data update
-        if self.config.experimental_pipeline_url:
+        if self.config.experimental_pipeline_port:
             self.producer.send_msg(msg)
             return {"success": True}
 

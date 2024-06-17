@@ -97,7 +97,7 @@ def test_trainer():
         port_number=5555,
         broadcast_port=5556,
         request_types=["get-stats"],
-        # experimental_pipeline_url="tcp://127.0.0.1:5547",
+        # experimental_pipeline_port=5547,
     )
     server = TrainerServer(trainer_config, new_data_callback, request_callback)
 
@@ -199,7 +199,7 @@ def stress_test_trainer():
         broadcast_port=5568,
         # NOTE: use pipe for faster datastore update
         # show that speed up from 0.06 to 0.005 sec in stress test
-        # experimental_pipeline_url="tcp://127.0.0.1:5547",
+        # experimental_pipeline_port=5547,
     )
     curr_timeout = 5
     server = TrainerServer(trainer_config, new_data_callback, request_callback)
