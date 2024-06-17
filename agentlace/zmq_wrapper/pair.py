@@ -8,14 +8,20 @@ import pickle
 import logging
 import zlib
 
+from agentlace.internal.utils import make_compression_method
+
 ##############################################################################
 
+
 class PairServer:
-    def __init__(self, port=5557, log_level=logging.DEBUG):
+    def __init__(self,
+                 port=5557,
+                 log_level=logging.DEBUG,
+                 compression: str = 'lz4'):
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.PAIR)
         self.socket.bind(f"tcp://*:{port}")
-
+        self.compress, self.decompress = make_compression_method(compression)
         self.callback = None
 
         logging.basicConfig(level=log_level)
@@ -25,8 +31,7 @@ class PairServer:
         self.callback = callback
 
     def broadcast(self, message: dict):
-        serialized = pickle.dumps(message)
-        serialized = zlib.compress(serialized)
+        serialized = self.compress(message)
         self.socket.send(serialized)
 
     def run(self):
@@ -34,8 +39,7 @@ class PairServer:
             try:
                 # Wait for the next message from the client
                 message = self.socket.recv(flags=zmq.NOBLOCK)
-                message = zlib.decompress(message)
-                message = pickle.loads(message)
+                message = self.decompress(message)
                 logging.debug(f"Received message: {message}")
 
                 if self.callback:
@@ -45,12 +49,16 @@ class PairServer:
 
 ##############################################################################
 
+
 class PairClient:
-    def __init__(self, ip: str, port=5557, log_level=logging.DEBUG):
+    def __init__(self,
+                 ip: str, port=5557,
+                 log_level=logging.DEBUG,
+                 compression: str = 'lz4'):
         self.context = zmq.Context()
         self.socket = self.context.socket(zmq.PAIR)
         self.socket.connect(f"tcp://{ip}:{port}")
-
+        self.compress, self.decompress = make_compression_method(compression)
         self.callback = None
 
         logging.basicConfig(level=log_level)
@@ -60,8 +68,7 @@ class PairClient:
         self.callback = callback
 
     def broadcast(self, message: dict):
-        serialized = pickle.dumps(message)
-        serialized = zlib.compress(serialized)
+        serialized = self.compress(message)
         self.socket.send(serialized)
 
     def run(self):
@@ -69,8 +76,7 @@ class PairClient:
             try:
                 # Wait for the next message from the server
                 message = self.socket.recv(flags=zmq.NOBLOCK)
-                message = zlib.decompress(message)
-                message = pickle.loads(message)
+                message = self.decompress(message)
                 logging.debug(f"Received message: {message}")
 
                 if self.callback:
@@ -79,6 +85,7 @@ class PairClient:
                 pass
 
 ##############################################################################
+
 
 if __name__ == "__main__":
     # NOTE: This is just for Testing

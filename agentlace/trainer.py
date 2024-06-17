@@ -7,6 +7,7 @@ from collections import deque
 
 from agentlace.zmq_wrapper.req_rep import ReqRepServer, ReqRepClient
 from agentlace.zmq_wrapper.broadcast import BroadcastServer, BroadcastClient
+from agentlace.zmq_wrapper.pipeline import Consumer, Producer
 from agentlace.internal.utils import compute_hash
 from agentlace.data.data_store import DataStoreBase
 
@@ -33,6 +34,7 @@ class TrainerConfig():
     request_types: List[str] = field(default_factory=list)
     rate_limit: Optional[int] = None
     version: str = "0.0.2"
+    experimental_pipeline_url: Optional[str] = None
 
 
 class DataCallback(Protocol):
@@ -75,9 +77,10 @@ class TrainerServer:
         """
         self.queue = deque()  # FIFO queue
         self.request_types = set(config.request_types)  # faster lookup
-        self.data_stores = {} # map of {ds_name: DataStoreBase}
+        self.data_stores = {}  # map of {ds_name: DataStoreBase}
         self.last_update_id_map = {}  # map of {ds_name: last_update_id}
         self.config = config
+        self.data_callback = data_callback
 
         ############################################################################
         def __callback_impl(data: dict) -> dict:
@@ -120,17 +123,45 @@ class TrainerServer:
             config.port_number, __callback_impl, log_level=log_level)
         self.broadcast_server = BroadcastServer(
             config.broadcast_port, log_level=log_level)
+
+        # NOTE: experimental feature to use pipeline for data update
+        if config.experimental_pipeline_url:
+            def _pipe_callback_impl(data: Any):
+                # NOTE insert data to the data store similar as above
+                _payload = data.get("payload")
+                store_name = data.get("store_name")
+                last_update_id = _payload.get("last_id", -1)
+                if store_name not in self.data_stores:
+                    return
+                batch_data = _payload.get("data", [])
+                self.data_stores[store_name].batch_insert(batch_data)
+                if self.data_callback:
+                    self.data_callback(store_name, _payload)
+                self.last_update_id_map[store_name] = last_update_id
+                return
+            self.consumer = Consumer(
+                _pipe_callback_impl, config.experimental_pipeline_url)
+            self.consumer.async_start()
+
         logging.basicConfig(level=log_level)
         logging.debug(
             f"Trainer server is listening on port {config.port_number}")
 
     def register_data_store(self, name, data_store: DataStoreBase):
-        """Register a datastore to the server"""
+        """
+        Register a datastore to the server
+            :param name: Name of the data store
+            :param data_store: Datastore object
+        """
         self.data_stores[name] = data_store
         self.last_update_id_map[name] = -1
 
     def data_store(self, name) -> Optional[DataStoreBase]:
-        """Get the datastore reference from the server"""
+        """
+        Get the datastore reference from the server
+            :param name: Name of the data store
+            :return: Datastore object
+        """
         return self.data_stores.get(name)
 
     def store_names(self) -> Set[str]:
@@ -186,7 +217,7 @@ class TrainerClient:
             :param data_stores: Map of data stores (str id -> DataStoreBase)
             :param log_level: Logging level
             :param wait_for_server: Whether to wait for the server to start
-
+            :param timeout_ms: Request Timeout in milliseconds
         Note:
             name, and data_store will deprecate in future versions, to support
             multiple data stores in single client, use `data_stores_map` instead.
@@ -199,7 +230,6 @@ class TrainerClient:
         self.config = config
         self.request_types = set(config.request_types)  # faster lookup
         self.data_store = data_store
-        self.last_sync_data_id = -1
         self.update_thread = None
         self.last_request_time = 0
         self.log_level = log_level
@@ -227,10 +257,14 @@ class TrainerClient:
                 f"Incompatible config with hash with server. "
                 "Please check the config of the server and client")
 
+        # NOTE: experimental feature to use pipeline for data update
+        if config.experimental_pipeline_url:
+            self.producer = Producer(config.experimental_pipeline_url)
+
         # First update the server's datastore
         res = self.update()
         if not res:
-            logging.error("Failed to update server's data store, do check!")
+            logging.error("Failed to get res when update server datastore")
         logging.debug(
             f"Initiated trainer client at {server_ip}:{config.port_number}")
 
@@ -244,7 +278,7 @@ class TrainerClient:
         if self.data_store is not None:
             from_id = self.get_server_last_update_id(self.client_name)
             if from_id is None:
-                return None
+                return False
             return self.update_datastore(self.client_name, from_id)
 
         # if multiple data stores is used
@@ -252,10 +286,10 @@ class TrainerClient:
             for name, data_store in self.data_stores_map.items():
                 from_id = self.get_server_last_update_id(name)
                 if from_id is None:
-                    return None
+                    return False
                 self.update_datastore(name, from_id)
             return True
-        return None
+        return False
 
     def update_datastore(
         self,
@@ -300,8 +334,9 @@ class TrainerClient:
             return True if server_last_id == client_latest_id else False
 
         if res is None or not res["success"]:
-            logging.warning("Failed to update server datastore (maybe)")
-            return True
+            logging.warning("Failed to get res when update server datastore")
+            return False
+        return True
 
     def get_server_last_update_id(self, name: str) -> Optional[int]:
         """
@@ -377,12 +412,19 @@ class TrainerClient:
             :return: Response from the trainer, return None if timeout
         """
         msg = {"type": "datastore", "store_name": name, "payload": data}
+
+        # NOTE: experimental feature to use pipeline for data update
+        if self.config.experimental_pipeline_url:
+            self.producer.send_msg(msg)
+            return {"success": True}
+
         if self.config.rate_limit and \
                 time.time() - self.last_request_time < 1 / self.config.rate_limit:
             logging.warning("Rate limit exceeded")
             return None
         self.last_request_time = time.time()
-        return self.req_rep_client.send_msg(msg)
+        self.req_rep_client.send_msg(msg)
+        return {"success": True}
 
 ##############################################################################
 
