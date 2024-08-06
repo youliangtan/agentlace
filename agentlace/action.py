@@ -121,7 +121,8 @@ class ActionClient:
     def __init__(self,
                  server_ip: str,
                  config: ActionConfig, 
-                 wait_for_server: bool = False
+                 wait_for_server: bool = False,
+                 timeout_ms: int = 800,
                  ):
         """
         Args:
@@ -129,7 +130,7 @@ class ActionClient:
             :param config: Config object
             :param wait_for_server: Whether to retry connecting to the server
         """
-        self.client = ReqRepClient(server_ip, config.port_number)
+        self.client = ReqRepClient(server_ip, config.port_number, timeout_ms=timeout_ms)
         res = self.client.send_msg({"type": "hash"})
 
         # Retry to connect to the server if not connected

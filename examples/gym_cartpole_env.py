@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from agentlace.action_env import ActionServerEnvWrapper, ActionClientEnv
+from agentlace.gym_env import GymEnvServerWrapper, GymEnvClient
 import gym
 import argparse
 
@@ -13,11 +13,11 @@ for example:
 We would want to wrap it as such that we can run the env as server and client.
 
 1. Run the server:
-    python example_env_service.py --server
-    This wraps the env = ActionServerEnvWrapper(env)
+    python gym_cartpole_env.py --server
+    This wraps the env = GymEnvServerWrapper(env)
     
 2. Run the client:
-    python example_env_service.py --client
+    python gym_cartpole_env.py --client
     Use a generic client to interact with the server.
 """
 
@@ -51,16 +51,16 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.server:
-        print("Running Action Env server")
+        print("Running Gym Env server")
         env = gym.make('CartPole-v1', render_mode=args.render_mode)
-        env = ActionServerEnvWrapper(env, port=args.port)
+        env = GymEnvServerWrapper(env, port=args.port)
         env.start()
         env.stop()
         print("Server stopped")
 
     elif args.client:
-        print("Running Action Env client")
-        env = ActionClientEnv(host=args.host, port=args.port)
+        print("Running Gym Env client")
+        env = GymEnvClient(host=args.host, port=args.port)
         run_gym_env(env)
 
     else:

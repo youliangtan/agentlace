@@ -16,13 +16,14 @@ DefaultActionConfig = ActionConfig(
 )
 
 
-class ActionClientEnv(gym.Env):
+class GymEnvClient(gym.Env):
     """Action Client interface with agentlace action server"""
 
     def __init__(self,
                  host: str = "localhost",
                  port: int = 5546,
                  retry_interval: float = 0.5,
+                 timeout_ms: int = 800,
                  ):
         """
         Initialize the action client interface.
@@ -30,12 +31,17 @@ class ActionClientEnv(gym.Env):
             host: the host of the server
             port: the port number of the server
             retry_interval: the interval to retry if no response
+            timeout_ms: the timeout in milliseconds
+            
+        NOTE: certain time user would need to increase the 'timeout_ms'
+            since the Env might take longer time to execute reset() and step()
         """
         _config = DefaultActionConfig
         _config.port_number = port
         _config.broadcast_port = port + 1
         self.retry_interval = retry_interval
-        self._client = ActionClient(host, _config)
+        self._client = ActionClient(host, _config, timeout_ms=timeout_ms)
+        print(f"initializing env action client with host: {host}, port: {port}")
 
         # create action client
         _full_obs = self._try_obs()
@@ -69,13 +75,12 @@ class ActionClientEnv(gym.Env):
     def _try_act(self, act_key, act_payload):
         res = self._client.act(act_key, act_payload)
         while res is None:
-            print(f"waiting for action {act_key}")
             res = self._client.act(act_key, act_payload)
             time.sleep(self.retry_interval)
         return res["act_ret"]
 
 
-class ActionServerEnvWrapper(gym.Wrapper):
+class GymEnvServerWrapper(gym.Wrapper):
     """
     This wraps the gym environment to provide the server interface.
     """

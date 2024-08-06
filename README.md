@@ -34,16 +34,18 @@ python3 examples/action_streamer.py --client
 
 2. **Gym Env as action server**
 
-Say we have a simple `env = gym.make('CartPole-v1')` environment. Run example: `python3 examples/action_cartpole_env.py`
+Say we have a simple `env = gym.make('CartPole-v1')` environment. Run example: `python3 examples/gym_cartpole_env.py`
 
 We can use agentlace to run the environment as a server, and the client can send action to the server in a distributed manner. Meanwhile, we still retain the gym API on the client and server side.
 
 ```bash
 # Run the server first
-python3 examples/action_cartpole_env.py --server
+python3 examples/gym_cartpole_env.py --server
 # Run the client on a different terminal
-python3 examples/action_cartpole_env.py --client
+python3 examples/gym_cartpole_env.py --client
 ```
+
+Similarly, check out [example](examples/robosuite_env.py) with [robosuite](https://github.com/ARISE-Initiative/robosuite) env.
 
 3. **Async learner-actor with Gym RL env**
 
