@@ -11,6 +11,8 @@ python robosuite_env.py
 python robosuite_env.py --server
 python robosuite_env.py --client
 
+NOTE: make sure https://github.com/ARISE-Initiative/robosuite/pull/497 is merged.
+      else type: git pull origin refs/pull/497/head  to use the pending PR branch.
 """
 
 import robosuite as suite
