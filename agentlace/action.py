@@ -75,8 +75,7 @@ class ActionServer:
             elif payload["type"] == "act" and act_callback is not None:
                 return act_callback(payload["key"], payload["payload"])
             elif payload["type"] == "hash":
-                config_json = json.dumps(asdict(config), separators=(',', ':'))
-                return {"success": True, "payload": config_json}
+                return {"success": True, "payload": config}
             return {"success": False, "message": "Invalid payload"}
 
         self.config = config
@@ -145,11 +144,19 @@ class ActionClient:
             raise Exception("Failed to connect to action server")
 
         # Check hash of server config to ensure compatibility
-        config_json = json.dumps(asdict(config), separators=(',', ':'))
-        if compute_hash(config_json) != compute_hash(res["payload"]):
+        def _get_hash_from_config(config: ActionConfig) -> str:
+            _dict = asdict(config)
+            # remove port for hash comparison since it can be rerouted
+            _dict.pop("port_number")
+            return compute_hash(json.dumps(_dict, separators=(',', ':')))
+
+        # Check hash of server config to ensure compatibility
+        if _get_hash_from_config(config) != _get_hash_from_config(res["payload"]):
             raise Exception(
                 f"Incompatible config with hash with server. "
-                "Please check the config of the server and client")
+                "Please check the config of the server and client. "
+                "Or ensure agentlace commit/version is the same"
+                )
 
         # use hash for faster lookup. config uses list because it is
         # used for hash md5 comparison
