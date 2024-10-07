@@ -55,8 +55,8 @@ Example Scripts:
 | Env | Description | Server | Client |
 | --- | --- | --- | --- |
 | CartPole-v1 | Classic Gym env | `python3 examples/gym_cartpole_env.py --server` | `python3 examples/gym_cartpole_env.py --client` |
-| [Robosuite](https://github.com/ARISE-Initiative/robosuite) | Robot learning framework based on mujoco | `python3 examples/robosuite_env.py --server` | `python3 examples/robosuite_env.py --client` |
-| [OmniGibson](https://github.com/StanfordVL/OmniGibson) | Robot learning framework based on Nvidia Omniverse | `python3 examples/omnigibson_env.py --server` | `python3 examples/omnigibson_env.py --client --robot fetch` |
+| [Robosuite](https://github.com/ARISE-Initiative/robosuite) | Robot learning Sim - Mujoco | `python3 examples/robosuite_env.py --server` | `python3 examples/robosuite_env.py --client` |
+| [OmniGibson](https://github.com/StanfordVL/OmniGibson) | Robot learning Sim - Nvidia Omniverse | `python3 examples/omnigibson_env.py --server` | `python3 examples/omnigibson_env.py --client --robot fetch` |
 
 *NOTE: Run server first, then client. Install the required dependencies for the respective envs.*
 
