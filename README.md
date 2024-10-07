@@ -18,7 +18,7 @@ pip install -e .
 
 ## Quick Start
 
-1. **Video streamer example**
+1. **Video streamer example** 📷
 
 This showcases how we can use agentlace to stream a video footage of an agent server to a client. The client can also send custom action to the agent. This is helpful when we want to run a lite actor on an edge device, and a big policy on a remote GPU server.
 
@@ -32,26 +32,39 @@ On a different terminal, you can also run it on a different machine and provide 
 python3 examples/action_streamer.py --client
 ```
 
-2. **Gym Env as action server**
+2. **Gym Env as action server** 🤖🌎
 
-Say we have a simple `env = gym.make('CartPole-v1')` environment. Run example: `python3 examples/gym_cartpole_env.py`
+Say we have a simple `env = gym.make('CartPole-v1')` environment. (`python3 examples/gym_cartpole_env.py`)
 
 We can use agentlace to run the environment as a server, and the client can send action to the server in a distributed manner. Meanwhile, we still retain the gym API on the client and server side.
 
-```bash
-# Run the server first
-python3 examples/gym_cartpole_env.py --server
-# Run the client on a different terminal
-python3 examples/gym_cartpole_env.py --client
+```python
+env = gym.make('CartPole-v1', render_mode=args.render_mode)
+env = GymEnvServerWrapper(env, port=args.port)
+env.start()
 ```
 
-Similarly, check out [example](examples/robosuite_env.py) with [robosuite](https://github.com/ARISE-Initiative/robosuite) env.
+```python
+env = GymEnvClientWrapper('localhost', port=args.port)
+env.reset()
+env.step(action)
+```
 
-3. **Async learner-actor with Gym RL env**
+Example Scripts:
+
+| Env | Description | Server | Client |
+| --- | --- | --- | --- |
+| CartPole-v1 | Classic Gym env | `python3 examples/gym_cartpole_env.py --server` | `python3 examples/gym_cartpole_env.py --client` |
+| [Robosuite](https://github.com/ARISE-Initiative/robosuite) | Robot learning Sim - Mujoco | `python3 examples/robosuite_env.py --server` | `python3 examples/robosuite_env.py --client` |
+| [OmniGibson](https://github.com/StanfordVL/OmniGibson) | Robot learning Sim - Nvidia Omniverse | `python3 examples/omnigibson_env.py --server` | `python3 examples/omnigibson_env.py --client --robot fetch` |
+
+*NOTE: Run server first, then client. Install the required dependencies for the respective envs.*
+
+3. **Async learner-actor with Gym RL env** 🤖💾🌎
 
 Requires [jax](https://jax.readthedocs.io/en/latest/installation.html), [jaxrl_m](https://github.com/rail-berkeley/jaxrl_minimal), [mujuco-py](https://github.com/openai/mujoco-py#install-mujoco) as dependencies.
 
-This showcases how we can enable distributed training for RL applications. The learner can be run on a remote GPU server, while the actor can be run on a edge device. Off-policy RL algorithim (SAC) is used in this example.
+This showcases how we can enable distributed training for RL applications. The learner can be run on a remote GPU server, while the actor can be run on a edge device. Off-policy RL algorithim (SAC) is used in this example. This is enabled by using a distributed replay buffer and a broadcast network update.
 
 ```bash
 # Indicate --learner or --actor mode, no tag means async multithreaded mode

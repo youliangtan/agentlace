@@ -96,7 +96,7 @@ if __name__ == '__main__':
         run_env(env)
 
     else:
-        print("Running default cartpole env")
+        print("Running default robosuite env")
         env = make_env()
         run_env(env)
 
