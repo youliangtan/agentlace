@@ -45,7 +45,9 @@ python3 examples/gym_cartpole_env.py --server
 python3 examples/gym_cartpole_env.py --client
 ```
 
-Similarly, check out [example](examples/robosuite_env.py) with [robosuite](https://github.com/ARISE-Initiative/robosuite) env.
+Example Scripts on Robot Learning Environments:
+ - [Robosuite](https://github.com/ARISE-Initiative/robosuite) (Deepmind Mujoco sim): `python3 examples/robosuite_env.py`
+ - [OmniGibson](https://github.com/StanfordVL/OmniGibson)  (Nvidia Omniverse sim): `python3 examples/omnigibson_env.py`
 
 3. **Async learner-actor with Gym RL env**
 
