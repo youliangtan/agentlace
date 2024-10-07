@@ -33,9 +33,10 @@ gm.ENABLE_FLATCACHE = True
 def run_env(env):
     print("Running environment")
     # reset the environment
+    print("Observation space:", env.observation_space)
+    image_obs_key = list(env.observation_space.spaces.keys())[0]
+
     obs, info = env.reset()
-    print("Observation space:", obs.keys())
-    # exit()
 
     for i in range(1000):
         print("step", i)
@@ -43,10 +44,9 @@ def run_env(env):
         action = env.action_space.sample()
         print(action)
         obs, reward, done, trunc, info = env.step(action)  # take action in the environment
-        print(obs.keys(), obs["robot_yurjol::robot_yurjol:eyes:Camera:0::rgb"].shape)
 
         # convert tensor to numpy array, orginal shape is torch.Size([128, 128, 4])
-        image = obs["robot_yurjol::robot_yurjol:eyes:Camera:0::rgb"].numpy()
+        image = obs[image_obs_key].numpy()
         # remove the last channel
         image = image[:, :, :3]
         # Convert the image from RGB to BGR (OpenCV uses BGR by default)
