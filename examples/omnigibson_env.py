@@ -64,16 +64,18 @@ def run_env(env):
     # Release the display window
     cv2.destroyAllWindows()
 
+
 def main():
     # Parse args
     parser = argparse.ArgumentParser()
     parser.add_argument("--eval", action="store_true")
-    parser.add_argument("--host", type=str, default="localhost")
+    parser.add_argument("--host", type=str, default="localhost", help="only used for client")
     parser.add_argument("--port", type=int, default=5556)
     parser.add_argument("--client", action="store_true")
-    parser.add_argument("--server", action="store_true")
+    parser.add_argument("--robot_type", type=str, default="turtlebot", help="support turtlebot, tiago, fetch")
+
     args = parser.parse_args()
-    
+
     # if GymEnv client
     if args.client:
         print("Running Action Env client")
@@ -81,8 +83,18 @@ def main():
         run_env(env)
         return
 
+    # select the robot type: ref: https://github.com/StanfordVL/OmniGibson/tree/main/omnigibson/configs
+    if args.robot_type == "turtlebot":
+        path = f"{example_config_path}/turtlebot_nav.yaml"
+    elif args.robot_type == "tiago":
+        path = f"{example_config_path}/tiago_primitives.yaml.yaml"
+    elif args.robot_type == "fetch":
+        path = f"{example_config_path}/fetch_primitives.yaml"
+    else:
+        raise ValueError(f"Invalid robot type: {args.robot_type}")
+
     # Load config
-    with open(f"{example_config_path}/turtlebot_nav.yaml", "r") as f:
+    with open(path, "r") as f:
         cfg = yaml.load(f, Loader=yaml.FullLoader)
 
     # Make sure flattened obs and action space is used
