@@ -64,34 +64,16 @@ def run_env(env):
     # Release the display window
     cv2.destroyAllWindows()
 
-
-def main():
-    # Parse args
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--eval", action="store_true")
-    parser.add_argument("--host", type=str, default="localhost", help="only used for client")
-    parser.add_argument("--port", type=int, default=5556)
-    parser.add_argument("--client", action="store_true")
-    parser.add_argument("--robot_type", type=str, default="turtlebot", help="support turtlebot, tiago, fetch")
-
-    args = parser.parse_args()
-
-    # if GymEnv client
-    if args.client:
-        print("Running Action Env client")
-        env = GymEnvClient(host=args.host, port=args.port, timeout_ms=1500)
-        run_env(env)
-        return
-
+def make_env(robot_type: str, eval: bool = False):
     # select the robot type: ref: https://github.com/StanfordVL/OmniGibson/tree/main/omnigibson/configs
-    if args.robot_type == "turtlebot":
+    if robot_type == "turtlebot":
         path = f"{example_config_path}/turtlebot_nav.yaml"
-    elif args.robot_type == "tiago":
+    elif robot_type == "tiago":
         path = f"{example_config_path}/tiago_primitives.yaml.yaml"
-    elif args.robot_type == "fetch":
+    elif robot_type == "fetch":
         path = f"{example_config_path}/fetch_primitives.yaml"
     else:
-        raise ValueError(f"Invalid robot type: {args.robot_type}")
+        raise ValueError(f"Invalid robot type: {robot_type}")
 
     # Load config
     with open(path, "r") as f:
@@ -105,25 +87,47 @@ def main():
     cfg["robots"][0]["obs_modalities"] = ["rgb"]
 
     # If we're not eval, turn off the start / goal markers so the agent doesn't see them
-    if not args.eval:
+    if not eval:
        cfg["task"]["visualize_goal"] = False
 
     env = og.Environment(configs=cfg)
 
     # If we're evaluating, hide the ceilings and enable camera teleoperation so the user can easily
     # visualize the rollouts dynamically
-    if args.eval:
+    if eval:
         ceiling = env.scene.object_registry("name", "ceilings")
         ceiling.visible = False
         og.sim.enable_viewer_camera_teleoperation()
 
-    env = GymEnvServerWrapper(env, port=args.port)
-    # env.reset()
-    env.start()
-    env.stop()
-    print("Server stopped")
-    print("done")
+    return env
 
 
 if __name__ == "__main__":
-    main()
+    # Parse args
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--eval", action="store_true")
+    parser.add_argument("--host", type=str, default="localhost", help="only used for client")
+    parser.add_argument("--port", type=int, default=5556)
+    parser.add_argument("--client", action="store_true")
+    parser.add_argument("--server", action="store_true")
+    parser.add_argument("--robot_type", type=str, default="turtlebot", help="support turtlebot, tiago, fetch")
+
+    args = parser.parse_args()
+
+    # if GymEnv client
+    if args.client:
+        print("Running Action Env client")
+        env = GymEnvClient(host=args.host, port=args.port, timeout_ms=1500)
+        run_env(env)
+    elif args.server:
+        print("Running Action Env server")
+        env = make_env(args.robot_type, eval=args.eval)
+        env = GymEnvServerWrapper(env, port=args.port)
+        env.start()
+        env.stop()
+        print("Server stopped")
+    else:
+        print("Running default omnigibson env")
+        env = make_env(args.robot_type, eval=args.eval)
+        run_env(env)
+        print("done")
