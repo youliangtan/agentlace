@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='agentlace',
-    version='0.1.4',
+    version='0.1.5',
     packages=find_packages(),
     description='library to enable distributed agent for ml training and inference',
     url='https://github.com/youliangtan/agentlace',
