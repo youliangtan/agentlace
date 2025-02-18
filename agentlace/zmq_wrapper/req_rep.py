@@ -112,16 +112,32 @@ class ReqRepClient:
         Reset the socket connection, this is needed when REQ is in a
         broken state.
         """
-        if self.socket:
-            self.socket.close()
-        self.socket = self.context.socket(zmq.REQ)
-        self.socket.setsockopt(zmq.RCVTIMEO, self.timeout_ms)
-        self.socket.connect(f"tcp://{self.ip}:{self.port}")
+        try:
+            if self.socket:
+                self.socket.close()
+                self.socket = None
+        except Exception as e:
+            logging.warning(f"Error closing socket: {e}")
+            self.socket = None
+            
+        try:
+            self.socket = self.context.socket(zmq.REQ)
+            self.socket.setsockopt(zmq.RCVTIMEO, self.timeout_ms)
+            self.socket.setsockopt(zmq.LINGER, 0)  # Don't wait on close
+            self.socket.connect(f"tcp://{self.ip}:{self.port}")
+        except Exception as e:
+            logging.error(f"Failed to create new socket: {e}")
+            self.socket = None
+            raise
 
     def send_msg(self, request: dict, wait_for_response=True) -> Optional[str]:
-        if self.socket is None or self.socket.closed:
-            logging.debug("WARNING: Socket is closed, reseting...")
-            return None
+        if self.socket is None:
+            logging.warning("Socket is None, attempting reset...")
+            try:
+                self.reset_socket()
+            except Exception as e:
+                logging.error(f"Failed to reset socket: {e}")
+                return None
 
         serialized = self.compress(request)
         with self._internal_lock:
@@ -132,11 +148,12 @@ class ReqRepClient:
                 message = self.socket.recv()
                 return self.decompress(message)
             except Exception as e:
-                # accepts timeout exception
                 logging.warning(
-                    f"Failed to send message to {self.ip}:{self.port}: {e}, potential timeout")
-                logging.debug(f"WARNING: No res from server. reset socket.")
-                self.reset_socket()
+                    f"Failed to send message to {self.ip}:{self.port}: {e}")
+                try:
+                    self.reset_socket()
+                except Exception as reset_error:
+                    logging.error(f"Failed to reset socket after error: {reset_error}")
                 return None
 
     def __del__(self):
